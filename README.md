@@ -44,6 +44,29 @@ Set these repository secrets before enabling it:
 - `FUEL_FINDER_CLIENT_ID`
 - `FUEL_FINDER_CLIENT_SECRET`
 
+## AWS Lambda Worker
+
+The repository also includes `.github/workflows/deploy-lambda-worker.yml` to deploy a UK-hosted Lambda sync worker to AWS London (`eu-west-2`).
+
+GitHub secrets required for Lambda deployment:
+
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `FUEL_FINDER_CLIENT_ID`
+- `FUEL_FINDER_CLIENT_SECRET`
+
+GitHub repository variable required for Lambda deployment:
+
+- `LAMBDA_FUNCTION_NAME`
+
+The Lambda bundle is built from `src/lambda/sync-fuel-data.ts` using:
+
+```bash
+npm run build:lambda
+```
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

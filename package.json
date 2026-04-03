@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:lambda": "node scripts/build-lambda.mjs",
     "start": "next start",
     "lint": "eslint",
     "sync:fuel-data": "tsx scripts/sync-fuel-data.ts"
@@ -29,6 +30,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
+    "esbuild": "^0.25.11",
     "eslint-config-next": "16.2.2",
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
