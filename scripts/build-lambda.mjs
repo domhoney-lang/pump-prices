@@ -15,7 +15,6 @@ await build({
   target: "node20",
   format: "cjs",
   sourcemap: true,
-  external: ["@prisma/client"],
   define: {
     "process.env.NODE_ENV": '"production"',
   },
