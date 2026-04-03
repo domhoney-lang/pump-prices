@@ -28,9 +28,11 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
       price: price.price,
     }));
 
-  const latestPrice =
-    station.currentPrices.find((price) => price.fuelType.toLowerCase() === fuelType.toLowerCase())
-      ?.price ?? null;
+  const latestCurrentPrice = station.currentPrices.find(
+    (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
+  )?.price;
+  const latestHistoricalPrice = relevantPrices.at(-1)?.price ?? null;
+  const latestPrice = latestCurrentPrice ?? latestHistoricalPrice;
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>

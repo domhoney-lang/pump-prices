@@ -54,9 +54,13 @@ export default function Map({ stations, fuelType, onStationSelect }: MapProps) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {stations.map((station) => {
-          const latestPrice = station.currentPrices?.find(
+          const latestCurrentPrice = station.currentPrices.find(
             (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
           )?.price;
+          const fallbackPrice = station.prices.find(
+            (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
+          )?.price;
+          const latestPrice = latestCurrentPrice ?? fallbackPrice;
 
           return (
             <Marker

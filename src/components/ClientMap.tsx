@@ -20,9 +20,10 @@ const MapComponent = dynamic(() => import('./Map'), {
 
 interface ClientMapProps {
   initialStations: StationMapRecord[];
+  totalStationCount: number;
 }
 
-export default function ClientMap({ initialStations }: ClientMapProps) {
+export default function ClientMap({ initialStations, totalStationCount }: ClientMapProps) {
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
   const [selectedStation, setSelectedStation] = useState<StationDetailRecord | null>(null);
@@ -83,7 +84,7 @@ export default function ClientMap({ initialStations }: ClientMapProps) {
                 <h1 className="font-bold text-gray-900">UK Fuel Prices</h1>
                 <p className="text-sm text-gray-500">
                   {hasStations
-                    ? `${initialStations.length} stations loaded`
+                    ? `Showing ${initialStations.length} of ${totalStationCount} stations`
                     : 'Run the first sync to load stations onto the map'}
                 </p>
               </div>
