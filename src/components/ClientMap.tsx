@@ -1,11 +1,17 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, RefreshCw } from 'lucide-react';
 
-import { getStationDetails, type StationDetailRecord, type StationMapRecord } from '@/app/actions/stations';
+import {
+  getStationDetails,
+  getStationsInBounds,
+  type StationBoundsInput,
+  type StationDetailRecord,
+  type StationMapRecord,
+} from '@/app/actions/stations';
 import { syncFuelData } from '@/app/actions/sync';
 import StationDrawer from './StationDrawer';
 
@@ -27,13 +33,27 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
   const [selectedStation, setSelectedStation] = useState<StationDetailRecord | null>(null);
+  const [stations, setStations] = useState(initialStations);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [loadingStation, setLoadingStation] = useState(false);
+  const [loadingStations, setLoadingStations] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
+  const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
 
-  const hasStations = initialStations.length > 0;
+  const hasStations = stations.length > 0;
+  const stationSummary = useMemo(() => {
+    if (!hasStations) {
+      return 'Run the first sync to load stations onto the map';
+    }
+
+    if (matchingStationCount === totalStationCount) {
+      return `Showing ${stations.length} of ${totalStationCount} stations`;
+    }
+
+    return `Showing ${stations.length} of ${matchingStationCount} stations in this area`;
+  }, [hasStations, matchingStationCount, stations.length, totalStationCount]);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -45,6 +65,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
       if (result.success) {
         setSyncMessage(result.message);
+        setStations(initialStations);
         router.refresh();
       } else {
         setSyncError(result.error);
@@ -71,6 +92,22 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     }
   };
 
+  const handleViewportChange = async (bounds: StationBoundsInput) => {
+    setLoadingStations(true);
+    setSyncError(null);
+
+    try {
+      const result = await getStationsInBounds(bounds);
+      setStations(result.stations);
+      setMatchingStationCount(result.matchingStationCount);
+    } catch (error) {
+      console.error('Failed to load visible stations', error);
+      setSyncError('Could not load stations for the current map view.');
+    } finally {
+      setLoadingStations(false);
+    }
+  };
+
   return (
     <div className="relative h-full w-full">
       <div className="absolute left-0 right-0 top-0 z-10 p-4 pointer-events-none">
@@ -82,11 +119,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
               </div>
               <div>
                 <h1 className="font-bold text-gray-900">UK Fuel Prices</h1>
-                <p className="text-sm text-gray-500">
-                  {hasStations
-                    ? `Showing ${initialStations.length} of ${totalStationCount} stations`
-                    : 'Run the first sync to load stations onto the map'}
-                </p>
+                <p className="text-sm text-gray-500">{stationSummary}</p>
               </div>
             </div>
 
@@ -140,7 +173,12 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         </div>
       </div>
 
-      <MapComponent stations={initialStations} fuelType={fuelType} onStationSelect={handleStationSelect} />
+      <MapComponent
+        stations={stations}
+        fuelType={fuelType}
+        onStationSelect={handleStationSelect}
+        onViewportChange={handleViewportChange}
+      />
 
       {!hasStations && !isSyncing && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
@@ -165,6 +203,13 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         <div className="absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-2 rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-blue-600 shadow-lg">
           <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
           <span>Loading details...</span>
+        </div>
+      )}
+
+      {loadingStations && (
+        <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white/90 px-4 py-2 text-sm font-medium text-blue-600 shadow-lg">
+          <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+          <span>Loading stations in view...</span>
         </div>
       )}
 

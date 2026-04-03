@@ -1,10 +1,11 @@
 'use client';
 
-import { MapContainer, TileLayer, Marker } from 'react-leaflet';
+import { useEffect, useRef } from 'react';
+import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import type { StationMapRecord } from '@/app/actions/stations';
+import type { StationBoundsInput, StationMapRecord } from '@/app/actions/stations';
 
 // Fix for default marker icons in Leaflet with Webpack
 type LeafletIconDefault = typeof L.Icon.Default.prototype & {
@@ -22,9 +23,65 @@ interface MapProps {
   stations: StationMapRecord[];
   fuelType: 'unleaded' | 'diesel';
   onStationSelect: (stationId: string) => void;
+  onViewportChange: (bounds: StationBoundsInput) => void;
 }
 
-export default function Map({ stations, fuelType, onStationSelect }: MapProps) {
+function emitBounds(map: L.Map, onViewportChange: (bounds: StationBoundsInput) => void) {
+  const bounds = map.getBounds();
+  onViewportChange({
+    south: bounds.getSouth(),
+    west: bounds.getWest(),
+    north: bounds.getNorth(),
+    east: bounds.getEast(),
+  });
+}
+
+function ViewportSync({
+  onViewportChange,
+}: {
+  onViewportChange: (bounds: StationBoundsInput) => void;
+}) {
+  const map = useMap();
+  const timeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    emitBounds(map, onViewportChange);
+  }, [map, onViewportChange]);
+
+  useMapEvents({
+    moveend() {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+      }
+
+      timeoutRef.current = window.setTimeout(() => {
+        emitBounds(map, onViewportChange);
+      }, 150);
+    },
+    zoomend() {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+      }
+
+      timeoutRef.current = window.setTimeout(() => {
+        emitBounds(map, onViewportChange);
+      }, 150);
+    },
+  });
+
+  useEffect(
+    () => () => {
+      if (timeoutRef.current !== null) {
+        window.clearTimeout(timeoutRef.current);
+      }
+    },
+    [],
+  );
+
+  return null;
+}
+
+export default function Map({ stations, fuelType, onStationSelect, onViewportChange }: MapProps) {
   // Center roughly on the UK
   const defaultCenter: [number, number] = [54.5, -3.0];
   const defaultZoom = 6;
@@ -49,6 +106,7 @@ export default function Map({ stations, fuelType, onStationSelect }: MapProps) {
         className="w-full h-full"
         zoomControl={false}
       >
+        <ViewportSync onViewportChange={onViewportChange} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
