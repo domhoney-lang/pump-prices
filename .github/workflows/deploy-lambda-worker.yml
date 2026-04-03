@@ -3,7 +3,6 @@ name: Deploy Lambda Worker
 env:
   AWS_REGION: eu-west-2
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-  LAMBDA_ARCHITECTURE: x86_64
   LAMBDA_MEMORY_SIZE: "1024"
   LAMBDA_TIMEOUT_SECONDS: "600"
   LAMBDA_EPHEMERAL_STORAGE_MB: "512"
@@ -65,7 +64,6 @@ jobs:
             --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
             --runtime nodejs20.x \
             --handler sync-fuel-data.handler \
-            --architectures "${{ env.LAMBDA_ARCHITECTURE }}" \
             --memory-size "${{ env.LAMBDA_MEMORY_SIZE }}" \
             --timeout "${{ env.LAMBDA_TIMEOUT_SECONDS }}" \
             --ephemeral-storage "{\"Size\":${{ env.LAMBDA_EPHEMERAL_STORAGE_MB }}}" \

@@ -72,7 +72,6 @@ The deploy workflow also enforces production-oriented Lambda settings:
 - `NODE_ENV=production`
 - `nodejs20.x` runtime
 - `sync-fuel-data.handler` handler
-- `x86_64` architecture
 - `1024 MB` memory
 - `600s` timeout
 - `512 MB` ephemeral storage
