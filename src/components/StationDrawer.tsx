@@ -39,27 +39,32 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-black/40 z-40" />
         <Drawer.Content className="bg-white flex flex-col rounded-t-[10px] h-[50vh] mt-24 fixed bottom-0 left-0 right-0 z-50 shadow-xl">
-          <div className="p-4 bg-white rounded-t-[10px] flex-1 overflow-y-auto">
-            <div className="mx-auto w-12 h-1.5 flex-shrink-0 rounded-full bg-gray-300 mb-6" />
+          <div className="p-6 bg-white rounded-t-[10px] flex-1 overflow-y-auto">
+            <div className="mx-auto w-12 h-1.5 flex-shrink-0 rounded-full bg-gray-200 mb-8" />
             
             <div className="max-w-md mx-auto">
-              <h2 className="text-xl font-bold text-gray-900 mb-1">{station.brand || 'Unknown Brand'}</h2>
-              <p className="text-gray-500 text-sm mb-4">
-                {station.address}{station.postcode ? `, ${station.postcode}` : ''}
-              </p>
+              <div className="mb-6">
+                <h2 className="text-2xl font-bold text-gray-900 tracking-tight mb-1">{station.brand || 'Unknown Brand'}</h2>
+                <p className="text-gray-500 text-sm leading-relaxed">
+                  {station.address}{station.postcode ? `, ${station.postcode}` : ''}
+                </p>
+              </div>
 
-              <div className="bg-gray-50 rounded-lg p-4 mb-6 border border-gray-100 flex justify-between items-center">
+              <div className="bg-gradient-to-br from-blue-50 to-indigo-50/30 rounded-2xl p-5 mb-8 border border-blue-100/50 flex justify-between items-center shadow-sm">
                 <div>
-                  <p className="text-sm text-gray-500 capitalize">{fuelType}</p>
-                  <p className="text-3xl font-bold text-blue-600">
+                  <p className="text-sm font-medium text-blue-600/80 uppercase tracking-wider mb-1">{fuelType}</p>
+                  <p className="text-4xl font-extrabold text-blue-700 tracking-tight">
                     {latestPrice ? `${latestPrice.toFixed(1)}p` : 'N/A'}
                   </p>
                 </div>
               </div>
 
-              <h3 className="text-md font-semibold text-gray-800 mb-3">Last 7 Days (Price Fluctuation)</h3>
+              <div className="mb-4 flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-gray-900 tracking-wide uppercase">Price History</h3>
+                <span className="text-xs font-medium px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full">Last 7 Days</span>
+              </div>
               
-              <div className="h-48 w-full bg-white border border-gray-100 rounded-lg pt-4 pb-2 pr-4">
+              <div className="h-56 w-full bg-white border border-gray-100 rounded-2xl pt-5 pb-3 pr-5 shadow-sm">
                 {chartData.length > 1 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData}>
@@ -69,6 +74,7 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
                         tickLine={false}
                         axisLine={false}
                         dy={10}
+                        tick={{ fill: '#6b7280' }}
                       />
                       <YAxis 
                         domain={['dataMin - 1', 'dataMax + 1']} 
@@ -76,23 +82,33 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
                         tickLine={false}
                         axisLine={false}
                         tickFormatter={(value) => `${value.toFixed(1)}`}
+                        tick={{ fill: '#6b7280' }}
                       />
                       <Tooltip 
-                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                        contentStyle={{ 
+                          borderRadius: '12px', 
+                          border: '1px solid #e5e7eb', 
+                          boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+                          padding: '8px 12px',
+                          fontWeight: 500
+                        }}
+                        itemStyle={{ color: '#1f2937', fontWeight: 600 }}
                         formatter={(value) => [`${Number(value ?? 0).toFixed(1)}p`, 'Price']}
+                        labelStyle={{ color: '#6b7280', marginBottom: '4px', fontSize: '12px' }}
                       />
                       <Line 
                         type="monotone" 
                         dataKey="price" 
-                        stroke="#2563eb" 
+                        stroke="#3b82f6" 
                         strokeWidth={3}
-                        dot={{ r: 4, strokeWidth: 2 }}
-                        activeDot={{ r: 6 }}
+                        dot={{ r: 4, strokeWidth: 2, fill: '#ffffff' }}
+                        activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2, fill: '#ffffff' }}
+                        animationDuration={1000}
                       />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
-                  <div className="flex items-center justify-center h-full text-gray-400 text-sm">
+                  <div className="flex items-center justify-center h-full text-gray-400 text-sm font-medium">
                     Not enough data for the last 7 days.
                   </div>
                 )}

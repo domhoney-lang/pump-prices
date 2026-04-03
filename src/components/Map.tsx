@@ -116,16 +116,20 @@ export default function Map({
 
   const createCustomIcon = (price: number | undefined) => {
     const priceText = price ? `${price.toFixed(1)}p` : 'N/A';
-    const width = Math.max(46, priceText.length * 10 + 16);
-    const height = 28;
+    const width = Math.max(48, priceText.length * 10 + 20);
+    const height = 30;
 
     return L.divIcon({
       className: 'custom-marker',
-      html: `<div class="bg-blue-600 text-white font-bold px-2 py-1 rounded-md shadow-md text-sm whitespace-nowrap border border-white">
-               ${priceText}
+      html: `<div class="relative group cursor-pointer">
+               <div class="absolute -inset-1 bg-blue-600/20 rounded-full blur-sm opacity-0 group-hover:opacity-100 transition-opacity"></div>
+               <div class="relative bg-white text-gray-900 font-bold px-2.5 py-1 rounded-full shadow-md text-sm whitespace-nowrap border-[1.5px] border-blue-600 hover:bg-blue-50 transition-colors flex items-center justify-center">
+                 ${priceText}
+               </div>
+               <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-blue-600"></div>
              </div>`,
       iconSize: [width, height],
-      iconAnchor: [Math.round(width / 2), height],
+      iconAnchor: [Math.round(width / 2), height + 6], // Adjust for the pointer
     });
   };
 
