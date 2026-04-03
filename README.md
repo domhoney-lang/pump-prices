@@ -35,12 +35,14 @@ Set these values before syncing live data:
 
 ## GitHub Actions Scheduler
 
-The repository includes `.github/workflows/sync-fuel-data.yml`, which triggers the sync endpoint every 30 minutes and also supports manual runs from the Actions tab.
+The repository includes `.github/workflows/sync-fuel-data.yml`, which runs the sync job directly every 30 minutes and also supports manual runs from the Actions tab.
 
 Set these repository secrets before enabling it:
 
-- `SYNC_URL`: your deployed sync endpoint, for example `https://your-app.example.com/api/sync`
-- `CRON_SECRET`: the same secret used by the app environment
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `FUEL_FINDER_CLIENT_ID`
+- `FUEL_FINDER_CLIENT_SECRET`
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 

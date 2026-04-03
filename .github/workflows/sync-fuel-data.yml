@@ -15,21 +15,34 @@ jobs:
     timeout-minutes: 15
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
       - name: Validate required secrets
         env:
-          SYNC_URL: ${{ secrets.SYNC_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          FUEL_FINDER_CLIENT_ID: ${{ secrets.FUEL_FINDER_CLIENT_ID }}
+          FUEL_FINDER_CLIENT_SECRET: ${{ secrets.FUEL_FINDER_CLIENT_SECRET }}
         run: |
-          test -n "$SYNC_URL" || { echo "Missing SYNC_URL secret"; exit 1; }
-          test -n "$CRON_SECRET" || { echo "Missing CRON_SECRET secret"; exit 1; }
+          test -n "$DATABASE_URL" || { echo "Missing DATABASE_URL secret"; exit 1; }
+          test -n "$DIRECT_URL" || { echo "Missing DIRECT_URL secret"; exit 1; }
+          test -n "$FUEL_FINDER_CLIENT_ID" || { echo "Missing FUEL_FINDER_CLIENT_ID secret"; exit 1; }
+          test -n "$FUEL_FINDER_CLIENT_SECRET" || { echo "Missing FUEL_FINDER_CLIENT_SECRET secret"; exit 1; }
 
-      - name: Trigger scheduled fuel sync
+      - name: Run fuel sync directly
         env:
-          SYNC_URL: ${{ secrets.SYNC_URL }}
-          CRON_SECRET: ${{ secrets.CRON_SECRET }}
-        run: |
-          curl --fail-with-body \
-            --request POST \
-            --url "$SYNC_URL" \
-            --header "Authorization: Bearer $CRON_SECRET" \
-            --header "Content-Type: application/json"
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          FUEL_FINDER_CLIENT_ID: ${{ secrets.FUEL_FINDER_CLIENT_ID }}
+          FUEL_FINDER_CLIENT_SECRET: ${{ secrets.FUEL_FINDER_CLIENT_SECRET }}
+        run: npm run sync:fuel-data
