@@ -260,6 +260,26 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         onViewportChange={handleViewportChange}
       />
 
+      {hasStations && (
+        <div className="absolute bottom-6 right-6 z-20 pointer-events-auto">
+          <div className="flex flex-col gap-2 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-lg backdrop-blur-sm">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Price Guide</h3>
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+              <span className="text-sm font-medium text-gray-700">Cheapest 20%</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+              <span className="text-sm font-medium text-gray-700">Average</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="w-3 h-3 rounded-full bg-rose-500"></div>
+              <span className="text-sm font-medium text-gray-700">Most Expensive</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {!hasStations && !isSyncing && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
           <div className="pointer-events-auto w-full max-w-md rounded-3xl border border-gray-100 bg-white/90 p-8 text-center shadow-2xl backdrop-blur-md">

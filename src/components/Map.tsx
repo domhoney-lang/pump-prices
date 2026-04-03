@@ -114,22 +114,63 @@ export default function Map({
   const defaultCenter: [number, number] = [54.5, -3.0];
   const defaultZoom = 6;
 
+  // Calculate price percentiles for color coding
+  const validPrices = stations
+    .map((station) => {
+      const latestCurrent = station.currentPrices.find(
+        (p) => p.fuelType.toLowerCase() === fuelType.toLowerCase()
+      )?.price;
+      const fallback = station.prices.find(
+        (p) => p.fuelType.toLowerCase() === fuelType.toLowerCase()
+      )?.price;
+      return latestCurrent ?? fallback;
+    })
+    .filter((p): p is number => p !== undefined)
+    .sort((a, b) => a - b);
+
+  let cheapThreshold = 0;
+  let expensiveThreshold = Infinity;
+
+  if (validPrices.length > 0) {
+    const cheapIndex = Math.floor(validPrices.length * 0.2); // Bottom 20%
+    const expensiveIndex = Math.floor(validPrices.length * 0.8); // Top 20%
+    
+    cheapThreshold = validPrices[cheapIndex] || validPrices[0];
+    expensiveThreshold = validPrices[expensiveIndex] || validPrices[validPrices.length - 1];
+  }
+
+  const getPriceColorClasses = (price: number | undefined) => {
+    if (!price) return { bg: 'bg-gray-500', hoverBg: 'group-hover:bg-gray-600', border: 'border-t-gray-500', hoverBorder: 'group-hover:border-t-gray-600', ring: 'bg-gray-500/30' };
+    
+    if (price <= cheapThreshold) {
+      // Green for bottom 20%
+      return { bg: 'bg-emerald-600', hoverBg: 'group-hover:bg-emerald-700', border: 'border-t-emerald-600', hoverBorder: 'group-hover:border-t-emerald-700', ring: 'bg-emerald-600/30' };
+    } else if (price >= expensiveThreshold) {
+      // Red for top 20%
+      return { bg: 'bg-rose-600', hoverBg: 'group-hover:bg-rose-700', border: 'border-t-rose-600', hoverBorder: 'group-hover:border-t-rose-700', ring: 'bg-rose-600/30' };
+    }
+    // Blue/Yellow/Neutral for the middle 60%
+    return { bg: 'bg-amber-500', hoverBg: 'group-hover:bg-amber-600', border: 'border-t-amber-500', hoverBorder: 'group-hover:border-t-amber-600', ring: 'bg-amber-500/30' };
+  };
+
   const createCustomIcon = (price: number | undefined) => {
     const priceText = price ? `${price.toFixed(1)}p` : 'N/A';
     const width = Math.max(48, priceText.length * 10 + 20);
     const height = 30;
+    const colors = getPriceColorClasses(price);
 
     return L.divIcon({
       className: 'custom-marker',
-      html: `<div class="relative group cursor-pointer">
-               <div class="absolute -inset-1 bg-blue-600/20 rounded-full blur-sm opacity-0 group-hover:opacity-100 transition-opacity"></div>
-               <div class="relative bg-white text-gray-900 font-bold px-2.5 py-1 rounded-full shadow-md text-sm whitespace-nowrap border-[1.5px] border-blue-600 hover:bg-blue-50 transition-colors flex items-center justify-center">
+      html: `<div class="relative group cursor-pointer drop-shadow-md">
+               <div class="absolute -inset-1 ${colors.ring} rounded-full blur-sm opacity-0 group-hover:opacity-100 transition-opacity"></div>
+               <div class="relative ${colors.bg} text-white font-bold px-2.5 py-1 rounded-full text-sm whitespace-nowrap border-2 border-white ${colors.hoverBg} transition-colors flex items-center justify-center">
                  ${priceText}
                </div>
-               <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-blue-600"></div>
+               <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white"></div>
+               <div class="absolute -bottom-[4px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] ${colors.border} ${colors.hoverBorder} transition-colors"></div>
              </div>`,
       iconSize: [width, height],
-      iconAnchor: [Math.round(width / 2), height + 6], // Adjust for the pointer
+      iconAnchor: [Math.round(width / 2), height + 6],
     });
   };
 
