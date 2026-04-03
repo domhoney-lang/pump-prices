@@ -77,8 +77,8 @@ export function normalizeFuelType(value: string): SupportedFuelType | null {
     ["unleaded", "petrol", "e10", "e5", "premiumunleaded"].includes(normalized) ||
     normalized.includes("unleaded") ||
     normalized.includes("petrol") ||
-    normalized.endsWith("e10") ||
-    normalized.endsWith("e5")
+    normalized.startsWith("e10") ||
+    normalized.startsWith("e5")
   ) {
     return "unleaded";
   }
@@ -86,7 +86,9 @@ export function normalizeFuelType(value: string): SupportedFuelType | null {
   if (
     ["diesel", "b7", "premiumdiesel"].includes(normalized) ||
     normalized.includes("diesel") ||
-    normalized.endsWith("b7")
+    normalized.startsWith("b7") ||
+    normalized.startsWith("b10") ||
+    normalized.includes("hvo")
   ) {
     return "diesel";
   }

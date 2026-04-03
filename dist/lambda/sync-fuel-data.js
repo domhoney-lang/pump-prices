@@ -5992,10 +5992,10 @@ function getRequiredFuelFinderEnv(name) {
 }
 function normalizeFuelType(value) {
   const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (["unleaded", "petrol", "e10", "e5", "premiumunleaded"].includes(normalized) || normalized.includes("unleaded") || normalized.includes("petrol") || normalized.endsWith("e10") || normalized.endsWith("e5")) {
+  if (["unleaded", "petrol", "e10", "e5", "premiumunleaded"].includes(normalized) || normalized.includes("unleaded") || normalized.includes("petrol") || normalized.startsWith("e10") || normalized.startsWith("e5")) {
     return "unleaded";
   }
-  if (["diesel", "b7", "premiumdiesel"].includes(normalized) || normalized.includes("diesel") || normalized.endsWith("b7")) {
+  if (["diesel", "b7", "premiumdiesel"].includes(normalized) || normalized.includes("diesel") || normalized.startsWith("b7") || normalized.startsWith("b10") || normalized.includes("hvo")) {
     return "diesel";
   }
   return null;
