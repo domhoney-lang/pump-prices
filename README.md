@@ -16,6 +16,32 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Environment
+
+Set these values before syncing live data:
+
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
+- `FUEL_FINDER_CLIENT_ID`
+- `FUEL_FINDER_CLIENT_SECRET`
+- `CRON_SECRET` for the scheduled sync endpoint
+
+## Syncing Fuel Data
+
+- Use the in-app `Initial sync` or `Refresh` button to run a manual import.
+- For scheduled imports, call `POST /api/sync` with either `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
+
+## GitHub Actions Scheduler
+
+The repository includes `.github/workflows/sync-fuel-data.yml`, which triggers the sync endpoint every 30 minutes and also supports manual runs from the Actions tab.
+
+Set these repository secrets before enabling it:
+
+- `SYNC_URL`: your deployed sync endpoint, for example `https://your-app.example.com/api/sync`
+- `CRON_SECRET`: the same secret used by the app environment
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

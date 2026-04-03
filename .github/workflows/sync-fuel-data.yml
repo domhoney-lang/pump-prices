@@ -1,0 +1,35 @@
+name: Sync Fuel Data
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-fuel-data
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Validate required secrets
+        env:
+          SYNC_URL: ${{ secrets.SYNC_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          test -n "$SYNC_URL" || { echo "Missing SYNC_URL secret"; exit 1; }
+          test -n "$CRON_SECRET" || { echo "Missing CRON_SECRET secret"; exit 1; }
+
+      - name: Trigger scheduled fuel sync
+        env:
+          SYNC_URL: ${{ secrets.SYNC_URL }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          curl --fail-with-body \
+            --request POST \
+            --url "$SYNC_URL" \
+            --header "Authorization: Bearer $CRON_SECRET" \
+            --header "Content-Type: application/json"
