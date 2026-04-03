@@ -76,57 +76,33 @@ jobs:
               describe(key)
           PY
 
-      - name: Probe Fuel Finder token endpoint
+      - name: Probe Fuel Finder token endpoint (default network)
         env:
           FUEL_FINDER_CLIENT_ID: ${{ secrets.FUEL_FINDER_CLIENT_ID }}
           FUEL_FINDER_CLIENT_SECRET: ${{ secrets.FUEL_FINDER_CLIENT_SECRET }}
         run: |
-          python3 - <<'PY'
-          import json
-          import os
-          import sys
-          import urllib.error
-          import urllib.request
+          payload=$(printf '{"client_id":"%s","client_secret":"%s"}' "$FUEL_FINDER_CLIENT_ID" "$FUEL_FINDER_CLIENT_SECRET")
+          curl --silent --show-error --include \
+            --request POST \
+            --url "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_access_token" \
+            --header "Content-Type: application/json" \
+            --header "Accept: application/json" \
+            --header "User-Agent: pump-prices-github-action/1.0" \
+            --data "$payload"
 
-          payload = json.dumps(
-              {
-                  "client_id": os.environ["FUEL_FINDER_CLIENT_ID"],
-                  "client_secret": os.environ["FUEL_FINDER_CLIENT_SECRET"],
-              }
-          ).encode()
-
-          request = urllib.request.Request(
-              "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_access_token",
-              data=payload,
-              method="POST",
-              headers={"Content-Type": "application/json"},
-          )
-
-          try:
-              with urllib.request.urlopen(request, timeout=60) as response:
-                  body = json.loads(response.read().decode())
-                  token_data = body.get("data", body)
-                  print(
-                      json.dumps(
-                          {
-                              "status": response.status,
-                              "success": body.get("success"),
-                              "hasAccessToken": bool(token_data.get("access_token")),
-                              "expiresIn": token_data.get("expires_in"),
-                          }
-                      )
-                  )
-          except urllib.error.HTTPError as error:
-              print(
-                  json.dumps(
-                      {
-                          "status": error.code,
-                          "body": error.read().decode(),
-                      }
-                  )
-              )
-              sys.exit(1)
-          PY
+      - name: Probe Fuel Finder token endpoint (force IPv4)
+        env:
+          FUEL_FINDER_CLIENT_ID: ${{ secrets.FUEL_FINDER_CLIENT_ID }}
+          FUEL_FINDER_CLIENT_SECRET: ${{ secrets.FUEL_FINDER_CLIENT_SECRET }}
+        run: |
+          payload=$(printf '{"client_id":"%s","client_secret":"%s"}' "$FUEL_FINDER_CLIENT_ID" "$FUEL_FINDER_CLIENT_SECRET")
+          curl --silent --show-error --include --ipv4 \
+            --request POST \
+            --url "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_access_token" \
+            --header "Content-Type: application/json" \
+            --header "Accept: application/json" \
+            --header "User-Agent: pump-prices-github-action/1.0" \
+            --data "$payload"
 
       - name: Run fuel sync directly
         env:
