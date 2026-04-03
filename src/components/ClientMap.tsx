@@ -216,27 +216,27 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
   return (
     <div className="relative h-full w-full">
-      <div className="absolute left-0 right-0 top-0 z-10 p-4 pointer-events-none">
-        <div className="mx-auto flex max-w-3xl flex-col gap-3">
-          <div className="pointer-events-auto flex flex-col gap-3 rounded-2xl border border-gray-100 bg-white p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-3">
+      <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 px-3 pb-4 pt-3 sm:p-4">
+        <div className="mx-auto flex max-w-4xl flex-col gap-3">
+          <div className="pointer-events-auto flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between sm:p-4">
+            <div className="flex items-start gap-3">
               <div className="rounded-lg bg-blue-100 p-2">
                 <Fuel className="h-5 w-5 text-blue-600" />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h1 className="font-bold text-gray-900">UK Fuel Prices</h1>
                 <p className="text-sm text-gray-500">{stationSummary}</p>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div className="flex items-center gap-2 rounded-xl bg-gray-100 p-1">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
+              <div className="flex w-full items-center gap-2 rounded-xl bg-gray-100 p-1 sm:w-auto">
                 <span className="pl-2 pr-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">
                   Fuel
                 </span>
                 <button
                   onClick={() => setFuelType('unleaded')}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
                     fuelType === 'unleaded'
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
@@ -246,7 +246,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
                 </button>
                 <button
                   onClick={() => setFuelType('diesel')}
-                  className={`rounded-lg px-3 py-1.5 text-sm font-medium transition-colors ${
+                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
                     fuelType === 'diesel'
                       ? 'bg-white text-gray-900 shadow-sm'
                       : 'text-gray-500 hover:text-gray-700'
@@ -259,21 +259,11 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
               <button
                 onClick={handleLocateUser}
                 disabled={isLocating}
-                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:justify-start"
                 title="Use my location"
               >
                 <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
                 {isLocating ? 'Locating...' : 'My location'}
-              </button>
-
-              <button
-                onClick={handleSync}
-                disabled={isSyncing}
-                className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                title="Sync data"
-              >
-                <RefreshCw className={`h-4 w-4 ${isSyncing ? 'animate-spin' : ''}`} />
-                {isSyncing ? 'Syncing...' : hasStations ? 'Refresh' : 'Initial sync'}
               </button>
             </div>
           </div>
@@ -301,19 +291,21 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       />
 
       {hasStations && (
-        <div className="absolute bottom-6 right-6 z-20 pointer-events-auto">
-          <div className="flex flex-col gap-2 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-lg backdrop-blur-sm">
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Price Guide</h3>
+        <div className="pointer-events-auto absolute bottom-3 left-3 right-3 z-20 sm:bottom-6 sm:left-auto sm:right-6">
+          <div className="mx-auto flex w-full max-w-xs flex-col gap-2 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-lg backdrop-blur-sm sm:mx-0 sm:w-auto sm:max-w-none">
+            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+              Price Guide
+            </h3>
             <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
+              <div className="h-3 w-3 rounded-full bg-emerald-500"></div>
               <span className="text-sm font-medium text-gray-700">Cheapest 20%</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-amber-500"></div>
+              <div className="h-3 w-3 rounded-full bg-amber-500"></div>
               <span className="text-sm font-medium text-gray-700">Average</span>
             </div>
             <div className="flex items-center gap-3">
-              <div className="w-3 h-3 rounded-full bg-rose-500"></div>
+              <div className="h-3 w-3 rounded-full bg-rose-500"></div>
               <span className="text-sm font-medium text-gray-700">Most Expensive</span>
             </div>
           </div>
