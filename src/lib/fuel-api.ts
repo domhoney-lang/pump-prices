@@ -1,4 +1,4 @@
-export const FUEL_API_BASE = "https://api.fuelfinder.service.gov.uk/v1";
+export const FUEL_API_BASE = "https://www.fuel-finder.service.gov.uk/api/v1";
 const FUEL_FINDER_BATCH_SIZE = 500;
 
 export type SupportedFuelType = "unleaded" | "diesel";
@@ -45,6 +45,7 @@ class FuelFinderApiError extends Error {
   constructor(
     message: string,
     public readonly status: number,
+    public readonly details?: string,
   ) {
     super(message);
     this.name = "FuelFinderApiError";
@@ -101,19 +102,28 @@ export class FuelFinderClient {
       client_secret: getRequiredFuelFinderEnv("FUEL_FINDER_CLIENT_SECRET"),
     });
 
-    const response = await fetch(`${FUEL_API_BASE}/token`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: params.toString(),
-      cache: "no-store",
-    });
+    let response: Response;
+
+    try {
+      response = await fetch(`${FUEL_API_BASE}/oauth/generate_access_token`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+        },
+        body: params.toString(),
+        cache: "no-store",
+      });
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      throw new FuelFinderApiError("Failed to reach Fuel Finder token endpoint", 0, details);
+    }
 
     if (!response.ok) {
+      const responseBody = await response.text().catch(() => "");
       throw new FuelFinderApiError(
         `Failed to fetch Fuel Finder token (${response.status})`,
         response.status,
+        responseBody || undefined,
       );
     }
 
@@ -134,16 +144,24 @@ export class FuelFinderClient {
       }
     }
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      cache: "no-store",
-    });
+    let response: Response;
+
+    try {
+      response = await fetch(url.toString(), {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+        cache: "no-store",
+      });
+    } catch (error) {
+      const details = error instanceof Error ? error.message : String(error);
+      throw new FuelFinderApiError(`Failed to reach Fuel Finder endpoint for ${path}`, 0, details);
+    }
 
     if (!response.ok) {
+      const responseBody = await response.text().catch(() => "");
       const message = `Fuel Finder request failed for ${path} (${response.status})`;
-      throw new FuelFinderApiError(message, response.status);
+      throw new FuelFinderApiError(message, response.status, responseBody || undefined);
     }
 
     return (await response.json()) as T;

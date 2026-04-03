@@ -248,9 +248,24 @@ export async function syncFuelDataInternal(): Promise<FuelSyncResult> {
   } catch (error) {
     console.error("Sync failed:", error);
 
+    const messageParts = [];
+
+    if (error instanceof Error) {
+      messageParts.push(error.message);
+
+      const details =
+        "details" in error && typeof error.details === "string" && error.details.length > 0
+          ? error.details
+          : null;
+
+      if (details) {
+        messageParts.push(details);
+      }
+    }
+
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown sync error",
+      error: messageParts.length > 0 ? messageParts.join(": ") : "Unknown sync error",
     };
   }
 }
