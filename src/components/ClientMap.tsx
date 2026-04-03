@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, LocateFixed, RefreshCw } from 'lucide-react';
@@ -50,6 +50,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
   const lastBoundsKeyRef = useRef<string | null>(null);
   const viewportRequestIdRef = useRef(0);
+  const hasAttemptedAutoLocateRef = useRef(false);
 
   const hasStations = stations.length > 0;
   const stationSummary = useMemo(() => {
@@ -101,14 +102,18 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     }
   };
 
-  const handleLocateUser = () => {
+  const requestUserLocation = useCallback((options?: { silent?: boolean }) => {
     if (!navigator.geolocation) {
-      setSyncError('Geolocation is not supported by this browser.');
+      if (!options?.silent) {
+        setSyncError('Geolocation is not supported by this browser.');
+      }
       return;
     }
 
     setIsLocating(true);
-    setSyncError(null);
+    if (!options?.silent) {
+      setSyncError(null);
+    }
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
@@ -124,7 +129,9 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
             ? 'Location permission was denied.'
             : 'Could not determine your location.';
 
-        setSyncError(message);
+        if (!options?.silent) {
+          setSyncError(message);
+        }
         setIsLocating(false);
       },
       {
@@ -133,7 +140,40 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         maximumAge: 60000,
       },
     );
+  }, []);
+
+  const handleLocateUser = () => {
+    requestUserLocation();
   };
+
+  useEffect(() => {
+    if (hasAttemptedAutoLocateRef.current) {
+      return;
+    }
+
+    hasAttemptedAutoLocateRef.current = true;
+
+    if (
+      typeof navigator === 'undefined' ||
+      !('geolocation' in navigator) ||
+      !('permissions' in navigator)
+    ) {
+      return;
+    }
+
+    const permissions = navigator.permissions as Permissions;
+
+    permissions
+      .query({ name: 'geolocation' as PermissionName })
+      .then((status) => {
+        if (status.state === 'granted') {
+          requestUserLocation({ silent: true });
+        }
+      })
+      .catch(() => {
+        // Ignore unsupported permission-query implementations and keep manual location.
+      });
+  }, [requestUserLocation]);
 
   const handleViewportChange = useCallback(async (bounds: StationBoundsInput) => {
     const boundsKey = [
