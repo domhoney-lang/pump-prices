@@ -6,6 +6,14 @@ export type SupportedFuelType = "unleaded" | "diesel";
 interface TokenResponse {
   access_token: string;
   expires_in: number;
+  refresh_token?: string;
+}
+
+interface WrappedTokenResponse {
+  data?: TokenResponse;
+  access_token?: string;
+  expires_in?: number;
+  refresh_token?: string;
 }
 
 export interface FuelFinderLocation {
@@ -96,8 +104,7 @@ export class FuelFinderClient {
       return this.accessToken;
     }
 
-    const params = new URLSearchParams({
-      grant_type: "client_credentials",
+    const payload = JSON.stringify({
       client_id: getRequiredFuelFinderEnv("FUEL_FINDER_CLIENT_ID"),
       client_secret: getRequiredFuelFinderEnv("FUEL_FINDER_CLIENT_SECRET"),
     });
@@ -108,9 +115,9 @@ export class FuelFinderClient {
       response = await fetch(`${FUEL_API_BASE}/oauth/generate_access_token`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
+          "Content-Type": "application/json",
         },
-        body: params.toString(),
+        body: payload,
         cache: "no-store",
       });
     } catch (error) {
@@ -127,7 +134,17 @@ export class FuelFinderClient {
       );
     }
 
-    const data = (await response.json()) as TokenResponse;
+    const rawData = (await response.json()) as WrappedTokenResponse;
+    const data = rawData.data ?? rawData;
+
+    if (!data.access_token || !data.expires_in) {
+      throw new FuelFinderApiError(
+        "Fuel Finder token response was missing required fields",
+        response.status,
+        JSON.stringify(rawData),
+      );
+    }
+
     this.accessToken = data.access_token;
     this.tokenExpiresAt = Date.now() + data.expires_in * 1000 - 60_000;
 
