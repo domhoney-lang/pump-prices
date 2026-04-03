@@ -1,9 +1,29 @@
 import { prisma } from "../lib/prisma";
-import { syncFuelDataInternal } from "../lib/sync-fuel-data";
+import { syncFuelDataInternal, type FuelSyncMode } from "../lib/sync-fuel-data";
 
-export async function handler() {
+type LambdaSyncEvent = {
+  mode?: FuelSyncMode;
+};
+
+function getSyncModeFromEvent(event: LambdaSyncEvent | null | undefined): FuelSyncMode {
+  const mode = event?.mode;
+
+  if (!mode || mode === "incremental") {
+    return "incremental";
+  }
+
+  if (mode === "full-price-backfill") {
+    return mode;
+  }
+
+  throw new Error(`Unsupported sync mode: ${String(mode)}`);
+}
+
+export async function handler(event?: LambdaSyncEvent) {
   try {
-    const result = await syncFuelDataInternal();
+    const result = await syncFuelDataInternal({
+      mode: getSyncModeFromEvent(event),
+    });
 
     if (!result.success) {
       console.error("Lambda sync failed:", result.error);

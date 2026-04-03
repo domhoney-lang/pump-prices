@@ -33,6 +33,7 @@ Set these values before syncing live data:
 - Use the in-app `Initial sync` or `Refresh` button to run a manual import.
 - For scheduled imports, call `POST /api/sync` with either `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
 - For a one-off full price backfill, run `npm run sync:fuel-data -- --mode=full-price-backfill`.
+- For an online-only one-off backfill through AWS Lambda, invoke the worker with `{"mode":"full-price-backfill"}`.
 
 ## GitHub Actions Scheduler
 
@@ -66,6 +67,16 @@ The Lambda bundle is built from `src/lambda/sync-fuel-data.ts` using:
 
 ```bash
 npm run build:lambda
+```
+
+Example one-off Lambda backfill invoke:
+
+```bash
+aws lambda invoke \
+  --region eu-west-2 \
+  --function-name pump-prices-sync \
+  --payload '{"mode":"full-price-backfill"}' \
+  response.json
 ```
 
 The deploy workflow also enforces production-oriented Lambda settings:

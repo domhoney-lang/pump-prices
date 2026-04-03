@@ -5722,30 +5722,30 @@ var require_client = __commonJS({
       getRuntime: getRuntime2,
       createParam: createParam2
     } = require_library();
-    var Prisma = {};
-    exports2.Prisma = Prisma;
+    var Prisma2 = {};
+    exports2.Prisma = Prisma2;
     exports2.$Enums = {};
-    Prisma.prismaVersion = {
+    Prisma2.prismaVersion = {
       client: "6.19.3",
       engine: "c2990dca591cba766e3b7ef5d9e8a84796e47ab7"
     };
-    Prisma.PrismaClientKnownRequestError = PrismaClientKnownRequestError2;
-    Prisma.PrismaClientUnknownRequestError = PrismaClientUnknownRequestError2;
-    Prisma.PrismaClientRustPanicError = PrismaClientRustPanicError2;
-    Prisma.PrismaClientInitializationError = PrismaClientInitializationError2;
-    Prisma.PrismaClientValidationError = PrismaClientValidationError2;
-    Prisma.Decimal = Decimal2;
-    Prisma.sql = sqltag2;
-    Prisma.empty = empty2;
-    Prisma.join = join2;
-    Prisma.raw = raw2;
-    Prisma.validator = Public2.validator;
-    Prisma.getExtensionContext = Extensions2.getExtensionContext;
-    Prisma.defineExtension = Extensions2.defineExtension;
-    Prisma.DbNull = objectEnumValues2.instances.DbNull;
-    Prisma.JsonNull = objectEnumValues2.instances.JsonNull;
-    Prisma.AnyNull = objectEnumValues2.instances.AnyNull;
-    Prisma.NullTypes = {
+    Prisma2.PrismaClientKnownRequestError = PrismaClientKnownRequestError2;
+    Prisma2.PrismaClientUnknownRequestError = PrismaClientUnknownRequestError2;
+    Prisma2.PrismaClientRustPanicError = PrismaClientRustPanicError2;
+    Prisma2.PrismaClientInitializationError = PrismaClientInitializationError2;
+    Prisma2.PrismaClientValidationError = PrismaClientValidationError2;
+    Prisma2.Decimal = Decimal2;
+    Prisma2.sql = sqltag2;
+    Prisma2.empty = empty2;
+    Prisma2.join = join2;
+    Prisma2.raw = raw2;
+    Prisma2.validator = Public2.validator;
+    Prisma2.getExtensionContext = Extensions2.getExtensionContext;
+    Prisma2.defineExtension = Extensions2.defineExtension;
+    Prisma2.DbNull = objectEnumValues2.instances.DbNull;
+    Prisma2.JsonNull = objectEnumValues2.instances.JsonNull;
+    Prisma2.AnyNull = objectEnumValues2.instances.AnyNull;
+    Prisma2.NullTypes = {
       DbNull: objectEnumValues2.classes.DbNull,
       JsonNull: objectEnumValues2.classes.JsonNull,
       AnyNull: objectEnumValues2.classes.AnyNull
@@ -5774,6 +5774,14 @@ var require_client = __commonJS({
       price: "price",
       timestamp: "timestamp"
     };
+    exports2.Prisma.CurrentPriceScalarFieldEnum = {
+      stationId: "stationId",
+      fuelType: "fuelType",
+      price: "price",
+      timestamp: "timestamp",
+      createdAt: "createdAt",
+      updatedAt: "updatedAt"
+    };
     exports2.Prisma.SortOrder = {
       asc: "asc",
       desc: "desc"
@@ -5788,7 +5796,8 @@ var require_client = __commonJS({
     };
     exports2.Prisma.ModelName = {
       Station: "Station",
-      PriceHistory: "PriceHistory"
+      PriceHistory: "PriceHistory",
+      CurrentPrice: "CurrentPrice"
     };
     var config = {
       "generator": {
@@ -5853,15 +5862,16 @@ datasource db {
 }
 
 model Station {
-  id        String         @id // Use the site_id from Gov API
-  brand     String?
-  address   String?
-  postcode  String?
-  lat       Float
-  lng       Float
-  prices    PriceHistory[]
-  createdAt DateTime       @default(now())
-  updatedAt DateTime       @updatedAt
+  id            String         @id // Use the site_id from Gov API
+  brand         String?
+  address       String?
+  postcode      String?
+  lat           Float
+  lng           Float
+  prices        PriceHistory[]
+  currentPrices CurrentPrice[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 }
 
 model PriceHistory {
@@ -5877,9 +5887,24 @@ model PriceHistory {
   @@index([stationId])
   @@index([fuelType])
   @@index([timestamp])
+  @@index([stationId, fuelType, timestamp])
+}
+
+model CurrentPrice {
+  stationId String
+  fuelType  String
+  price     Float
+  timestamp DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  station Station @relation(fields: [stationId], references: [id], onDelete: Cascade)
+
+  @@id([stationId, fuelType])
+  @@index([timestamp])
 }
 `,
-      "inlineSchemaHash": "f6cf9a56a1849cebd9508e2cd5a62cb4f89270d2d054c098adf9a27257f8b97d",
+      "inlineSchemaHash": "e6b60acc6ad07ff3ab6dc1e3466493db54260b28587fdaa83f163200e6931c90",
       "copyEngine": true
     };
     var fs = require("fs");
@@ -5895,7 +5920,7 @@ model PriceHistory {
       config.dirname = path.join(process.cwd(), alternativePath);
       config.isBundled = true;
     }
-    config.runtimeDataModel = JSON.parse('{"models":{"Station":{"dbName":null,"schema":null,"fields":[{"name":"id","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":true,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"brand","kind":"scalar","isList":false,"isRequired":false,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"address","kind":"scalar","isList":false,"isRequired":false,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"postcode","kind":"scalar","isList":false,"isRequired":false,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"lat","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Float","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"lng","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Float","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"prices","kind":"object","isList":true,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"PriceHistory","nativeType":null,"relationName":"PriceHistoryToStation","relationFromFields":[],"relationToFields":[],"isGenerated":false,"isUpdatedAt":false},{"name":"createdAt","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":true,"type":"DateTime","nativeType":null,"default":{"name":"now","args":[]},"isGenerated":false,"isUpdatedAt":false},{"name":"updatedAt","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"DateTime","nativeType":null,"isGenerated":false,"isUpdatedAt":true}],"primaryKey":null,"uniqueFields":[],"uniqueIndexes":[],"isGenerated":false},"PriceHistory":{"dbName":null,"schema":null,"fields":[{"name":"id","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":true,"isReadOnly":false,"hasDefaultValue":true,"type":"String","nativeType":null,"default":{"name":"cuid","args":[1]},"isGenerated":false,"isUpdatedAt":false},{"name":"stationId","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":true,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"fuelType","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"price","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Float","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"timestamp","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"DateTime","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"station","kind":"object","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Station","nativeType":null,"relationName":"PriceHistoryToStation","relationFromFields":["stationId"],"relationToFields":["id"],"relationOnDelete":"Cascade","isGenerated":false,"isUpdatedAt":false}],"primaryKey":null,"uniqueFields":[["stationId","fuelType","timestamp"]],"uniqueIndexes":[{"name":null,"fields":["stationId","fuelType","timestamp"]}],"isGenerated":false}},"enums":{},"types":{}}');
+    config.runtimeDataModel = JSON.parse('{"models":{"Station":{"dbName":null,"schema":null,"fields":[{"name":"id","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":true,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"brand","kind":"scalar","isList":false,"isRequired":false,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"address","kind":"scalar","isList":false,"isRequired":false,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"postcode","kind":"scalar","isList":false,"isRequired":false,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"lat","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Float","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"lng","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Float","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"prices","kind":"object","isList":true,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"PriceHistory","nativeType":null,"relationName":"PriceHistoryToStation","relationFromFields":[],"relationToFields":[],"isGenerated":false,"isUpdatedAt":false},{"name":"currentPrices","kind":"object","isList":true,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"CurrentPrice","nativeType":null,"relationName":"CurrentPriceToStation","relationFromFields":[],"relationToFields":[],"isGenerated":false,"isUpdatedAt":false},{"name":"createdAt","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":true,"type":"DateTime","nativeType":null,"default":{"name":"now","args":[]},"isGenerated":false,"isUpdatedAt":false},{"name":"updatedAt","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"DateTime","nativeType":null,"isGenerated":false,"isUpdatedAt":true}],"primaryKey":null,"uniqueFields":[],"uniqueIndexes":[],"isGenerated":false},"PriceHistory":{"dbName":null,"schema":null,"fields":[{"name":"id","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":true,"isReadOnly":false,"hasDefaultValue":true,"type":"String","nativeType":null,"default":{"name":"cuid","args":[1]},"isGenerated":false,"isUpdatedAt":false},{"name":"stationId","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":true,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"fuelType","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"price","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Float","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"timestamp","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"DateTime","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"station","kind":"object","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Station","nativeType":null,"relationName":"PriceHistoryToStation","relationFromFields":["stationId"],"relationToFields":["id"],"relationOnDelete":"Cascade","isGenerated":false,"isUpdatedAt":false}],"primaryKey":null,"uniqueFields":[["stationId","fuelType","timestamp"]],"uniqueIndexes":[{"name":null,"fields":["stationId","fuelType","timestamp"]}],"isGenerated":false},"CurrentPrice":{"dbName":null,"schema":null,"fields":[{"name":"stationId","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":true,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"fuelType","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"String","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"price","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Float","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"timestamp","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"DateTime","nativeType":null,"isGenerated":false,"isUpdatedAt":false},{"name":"createdAt","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":true,"type":"DateTime","nativeType":null,"default":{"name":"now","args":[]},"isGenerated":false,"isUpdatedAt":false},{"name":"updatedAt","kind":"scalar","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"DateTime","nativeType":null,"isGenerated":false,"isUpdatedAt":true},{"name":"station","kind":"object","isList":false,"isRequired":true,"isUnique":false,"isId":false,"isReadOnly":false,"hasDefaultValue":false,"type":"Station","nativeType":null,"relationName":"CurrentPriceToStation","relationFromFields":["stationId"],"relationToFields":["id"],"relationOnDelete":"Cascade","isGenerated":false,"isUpdatedAt":false}],"primaryKey":{"name":null,"fields":["stationId","fuelType"]},"uniqueFields":[],"uniqueIndexes":[],"isGenerated":false}},"enums":{},"types":{}}');
     defineDmmfProperty2(exports2.Prisma, config.runtimeDataModel);
     config.engineWasm = void 0;
     config.compilerWasm = void 0;
@@ -5906,7 +5931,7 @@ model PriceHistory {
     });
     var PrismaClient2 = getPrismaClient2(config);
     exports2.PrismaClient = PrismaClient2;
-    Object.assign(exports2, Prisma);
+    Object.assign(exports2, Prisma2);
     path.join(__dirname, "libquery_engine-darwin-arm64.dylib.node");
     path.join(process.cwd(), "node_modules/.prisma/client/libquery_engine-darwin-arm64.dylib.node");
     path.join(__dirname, "libquery_engine-rhel-openssl-3.0.x.so.node");
@@ -5967,10 +5992,10 @@ function getRequiredFuelFinderEnv(name) {
 }
 function normalizeFuelType(value) {
   const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (["unleaded", "petrol", "e10", "e5", "premiumunleaded"].includes(normalized)) {
+  if (["unleaded", "petrol", "e10", "e5", "premiumunleaded"].includes(normalized) || normalized.includes("unleaded") || normalized.includes("petrol") || normalized.endsWith("e10") || normalized.endsWith("e5")) {
     return "unleaded";
   }
-  if (["diesel", "b7", "premiumdiesel"].includes(normalized)) {
+  if (["diesel", "b7", "premiumdiesel"].includes(normalized) || normalized.includes("diesel") || normalized.endsWith("b7")) {
     return "diesel";
   }
   return null;
@@ -5982,6 +6007,12 @@ function getPriceTimestamp(price) {
   }
   const parsed = new Date(sourceValue);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+function isMissingBatchError(details) {
+  if (!details) {
+    return false;
+  }
+  return details.includes("Requested batch") && details.includes("is not available");
 }
 var FuelFinderClient = class {
   constructor() {
@@ -6072,15 +6103,21 @@ var FuelFinderClient = class {
   }
   async *iterateForecourts(effectiveStartTimestamp) {
     yield* this.iterateBatches(
-      (batchNumber) => this.fetchForecourtBatch(batchNumber, effectiveStartTimestamp)
+      (batchNumber) => this.fetchForecourtBatch(batchNumber, effectiveStartTimestamp),
+      {
+        allowInitialBatch404: Boolean(effectiveStartTimestamp)
+      }
     );
   }
   async *iteratePriceStations(effectiveStartTimestamp) {
     yield* this.iterateBatches(
-      (batchNumber) => this.fetchPriceBatch(batchNumber, effectiveStartTimestamp)
+      (batchNumber) => this.fetchPriceBatch(batchNumber, effectiveStartTimestamp),
+      {
+        allowInitialBatch404: Boolean(effectiveStartTimestamp)
+      }
     );
   }
-  async *iterateBatches(fetchBatch) {
+  async *iterateBatches(fetchBatch, options) {
     for (let batchNumber = 1; ; batchNumber += 1) {
       try {
         const batch = await fetchBatch(batchNumber);
@@ -6092,8 +6129,13 @@ var FuelFinderClient = class {
           break;
         }
       } catch (error) {
-        if (error instanceof FuelFinderApiError && error.status === 404 && batchNumber > 1) {
-          break;
+        if (error instanceof FuelFinderApiError && error.status === 404) {
+          if (batchNumber > 1) {
+            break;
+          }
+          if (options?.allowInitialBatch404 && isMissingBatchError(error.details)) {
+            break;
+          }
         }
         throw error;
       }
@@ -6103,7 +6145,11 @@ var FuelFinderClient = class {
 var fuelFinderClient = new FuelFinderClient();
 
 // src/lib/sync-fuel-data.ts
-var UPSERT_CHUNK_SIZE = 50;
+var import_client2 = __toESM(require_default2());
+var STATION_UPSERT_CHUNK_SIZE = 250;
+var PRICE_HISTORY_INSERT_CHUNK_SIZE = 1e3;
+var CURRENT_PRICE_UPSERT_CHUNK_SIZE = 500;
+var INCREMENTAL_SYNC_SAFETY_BUFFER_MS = 10 * 60 * 1e3;
 function chunkArray(items, chunkSize) {
   const chunks = [];
   for (let index = 0; index < items.length; index += chunkSize) {
@@ -6131,7 +6177,68 @@ function toNumber(value) {
   const parsed = typeof value === "number" ? value : Number(value);
   return Number.isFinite(parsed) ? parsed : null;
 }
-async function upsertForecourtBatch(batch) {
+function getKey(stationId, fuelType) {
+  return `${stationId}:${fuelType}`;
+}
+function toIncrementalStartTimestamp(timestamp) {
+  if (!timestamp) {
+    return void 0;
+  }
+  return new Date(
+    Math.max(timestamp.getTime() - INCREMENTAL_SYNC_SAFETY_BUFFER_MS, 0)
+  ).toISOString();
+}
+async function getKnownStationIds() {
+  const knownStations = await prisma.station.findMany({
+    select: {
+      id: true
+    }
+  });
+  return new Set(knownStations.map((station) => station.id));
+}
+async function getIncrementalStartTimestamp() {
+  const [latestCurrentPrice, latestPriceHistory, latestStation] = await prisma.$transaction([
+    prisma.currentPrice.aggregate({
+      _max: {
+        timestamp: true
+      }
+    }),
+    prisma.priceHistory.aggregate({
+      _max: {
+        timestamp: true
+      }
+    }),
+    prisma.station.aggregate({
+      _max: {
+        updatedAt: true
+      }
+    })
+  ]);
+  return toIncrementalStartTimestamp(
+    latestCurrentPrice._max.timestamp ?? latestPriceHistory._max.timestamp ?? latestStation._max.updatedAt
+  );
+}
+async function bulkUpsertStations(stations) {
+  for (const stationChunk of chunkArray(stations, STATION_UPSERT_CHUNK_SIZE)) {
+    await prisma.$executeRaw`
+      INSERT INTO "Station" ("id", "brand", "address", "postcode", "lat", "lng")
+      VALUES ${import_client2.Prisma.join(
+      stationChunk.map(
+        (station) => import_client2.Prisma.sql`(${station.id}, ${station.brand}, ${station.address}, ${station.postcode}, ${station.lat}, ${station.lng})`
+      )
+    )}
+      ON CONFLICT ("id") DO UPDATE
+      SET
+        "brand" = EXCLUDED."brand",
+        "address" = EXCLUDED."address",
+        "postcode" = EXCLUDED."postcode",
+        "lat" = EXCLUDED."lat",
+        "lng" = EXCLUDED."lng",
+        "updatedAt" = NOW()
+    `;
+  }
+}
+async function upsertForecourtBatch(batch, knownStationIds) {
   const stations = batch.map((station) => {
     const latitude = toNumber(station.location?.latitude);
     const longitude = toNumber(station.location?.longitude);
@@ -6147,16 +6254,12 @@ async function upsertForecourtBatch(batch) {
       lng: longitude
     };
   }).filter((station) => station !== null);
-  for (const stationChunk of chunkArray(stations, UPSERT_CHUNK_SIZE)) {
-    await prisma.$transaction(
-      stationChunk.map(
-        (station) => prisma.station.upsert({
-          where: { id: station.id },
-          update: station,
-          create: station
-        })
-      )
-    );
+  if (stations.length === 0) {
+    return 0;
+  }
+  await bulkUpsertStations(stations);
+  for (const station of stations) {
+    knownStationIds.add(station.id);
   }
   return stations.length;
 }
@@ -6181,94 +6284,116 @@ function normalizePriceBatch(batch) {
   rows.sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
   return rows;
 }
-async function insertChangedPrices(batch) {
-  const incomingRows = normalizePriceBatch(batch);
+async function insertPriceHistoryRows(rows) {
+  for (const rowChunk of chunkArray(rows, PRICE_HISTORY_INSERT_CHUNK_SIZE)) {
+    await prisma.priceHistory.createMany({
+      data: rowChunk,
+      skipDuplicates: true
+    });
+  }
+}
+async function bulkUpsertCurrentPrices(rows) {
+  for (const rowChunk of chunkArray(rows, CURRENT_PRICE_UPSERT_CHUNK_SIZE)) {
+    await prisma.$executeRaw`
+      INSERT INTO "CurrentPrice" ("stationId", "fuelType", "price", "timestamp")
+      VALUES ${import_client2.Prisma.join(
+      rowChunk.map(
+        (row) => import_client2.Prisma.sql`(${row.stationId}, ${row.fuelType}, ${row.price}, ${row.timestamp})`
+      )
+    )}
+      ON CONFLICT ("stationId", "fuelType") DO UPDATE
+      SET
+        "price" = EXCLUDED."price",
+        "timestamp" = EXCLUDED."timestamp",
+        "updatedAt" = NOW()
+      WHERE "CurrentPrice"."timestamp" <= EXCLUDED."timestamp"
+    `;
+  }
+}
+async function insertChangedPrices(batch, knownStationIds) {
+  const incomingRows = normalizePriceBatch(batch).filter((row) => knownStationIds.has(row.stationId));
   if (incomingRows.length === 0) {
-    return 0;
+    return {
+      insertedPriceChanges: 0,
+      syncedCurrentPrices: 0
+    };
   }
   const stationIds = [...new Set(incomingRows.map((row) => row.stationId))];
-  const knownStations = await prisma.station.findMany({
+  const currentPrices = await prisma.currentPrice.findMany({
     where: {
-      id: { in: stationIds }
+      stationId: { in: stationIds },
+      fuelType: { in: ["unleaded", "diesel"] }
     },
     select: {
-      id: true
-    }
-  });
-  const knownStationIds = new Set(knownStations.map((station) => station.id));
-  const filteredRows = incomingRows.filter((row) => knownStationIds.has(row.stationId));
-  if (filteredRows.length === 0) {
-    return 0;
-  }
-  const latestGroups = await prisma.priceHistory.groupBy({
-    by: ["stationId", "fuelType"],
-    where: {
-      stationId: {
-        in: [...knownStationIds]
-      },
-      fuelType: {
-        in: ["unleaded", "diesel"]
-      }
-    },
-    _max: {
+      stationId: true,
+      fuelType: true,
+      price: true,
       timestamp: true
     }
   });
-  const latestRows = latestGroups.length === 0 ? [] : await prisma.priceHistory.findMany({
-    where: {
-      OR: latestGroups.filter((group) => group._max.timestamp !== null).map((group) => ({
-        stationId: group.stationId,
-        fuelType: group.fuelType,
-        timestamp: group._max.timestamp
-      }))
-    }
-  });
   const latestByStationAndFuel = new Map(
-    latestRows.map((row) => [`${row.stationId}:${row.fuelType}`, row])
+    currentPrices.map((row) => [getKey(row.stationId, row.fuelType), row])
   );
   const rowsToInsert = [];
-  for (const row of filteredRows) {
-    const key = `${row.stationId}:${row.fuelType}`;
+  const currentPriceUpdates = /* @__PURE__ */ new Map();
+  for (const row of incomingRows) {
+    const key = getKey(row.stationId, row.fuelType);
     const latestRow = latestByStationAndFuel.get(key);
+    if (latestRow && row.timestamp.getTime() < latestRow.timestamp.getTime()) {
+      continue;
+    }
     if (!latestRow || latestRow.price !== row.price) {
       rowsToInsert.push(row);
-      latestByStationAndFuel.set(key, row);
     }
+    latestByStationAndFuel.set(key, row);
+    currentPriceUpdates.set(key, row);
   }
-  if (rowsToInsert.length === 0) {
-    return 0;
+  if (rowsToInsert.length > 0) {
+    await insertPriceHistoryRows(rowsToInsert);
   }
-  await prisma.priceHistory.createMany({
-    data: rowsToInsert,
-    skipDuplicates: true
-  });
-  return rowsToInsert.length;
+  const snapshotRows = [...currentPriceUpdates.values()];
+  if (snapshotRows.length > 0) {
+    await bulkUpsertCurrentPrices(snapshotRows);
+  }
+  return {
+    insertedPriceChanges: rowsToInsert.length,
+    syncedCurrentPrices: snapshotRows.length
+  };
 }
-async function syncFuelDataInternal() {
+async function syncFuelDataInternal(options = {}) {
   try {
+    const mode = options.mode ?? "incremental";
     const startedAt = Date.now();
     let stationBatchCount = 0;
     let priceBatchCount = 0;
     let syncedStations = 0;
     let insertedPriceChanges = 0;
-    for await (const forecourtBatch of fuelFinderClient.iterateForecourts()) {
+    let syncedCurrentPrices = 0;
+    const knownStationIds = await getKnownStationIds();
+    const incrementalStartTimestamp = mode === "full-price-backfill" ? void 0 : await getIncrementalStartTimestamp();
+    for await (const forecourtBatch of fuelFinderClient.iterateForecourts(incrementalStartTimestamp)) {
       stationBatchCount += 1;
-      syncedStations += await upsertForecourtBatch(forecourtBatch);
+      syncedStations += await upsertForecourtBatch(forecourtBatch, knownStationIds);
     }
-    for await (const priceBatch of fuelFinderClient.iteratePriceStations()) {
+    for await (const priceBatch of fuelFinderClient.iteratePriceStations(incrementalStartTimestamp)) {
       priceBatchCount += 1;
-      insertedPriceChanges += await insertChangedPrices(priceBatch);
+      const batchResult = await insertChangedPrices(priceBatch, knownStationIds);
+      insertedPriceChanges += batchResult.insertedPriceChanges;
+      syncedCurrentPrices += batchResult.syncedCurrentPrices;
     }
     const durationSeconds = Number(((Date.now() - startedAt) / 1e3).toFixed(1));
     return {
       success: true,
-      message: `Synced ${syncedStations} stations across ${stationBatchCount} batches and inserted ${insertedPriceChanges} changed prices across ${priceBatchCount} batches in ${durationSeconds}s.`,
+      message: `Synced ${syncedStations} stations across ${stationBatchCount} batches, refreshed ${syncedCurrentPrices} current prices, and inserted ${insertedPriceChanges} changed prices across ${priceBatchCount} price batches in ${durationSeconds}s.`,
       stats: {
+        mode,
         stationBatchCount,
         priceBatchCount,
         syncedStations,
         insertedPriceChanges,
-        durationSeconds
+        syncedCurrentPrices,
+        durationSeconds,
+        incrementalStartTimestamp: incrementalStartTimestamp ?? null
       }
     };
   } catch (error) {
@@ -6289,9 +6414,21 @@ async function syncFuelDataInternal() {
 }
 
 // src/lambda/sync-fuel-data.ts
-async function handler() {
+function getSyncModeFromEvent(event) {
+  const mode = event?.mode;
+  if (!mode || mode === "incremental") {
+    return "incremental";
+  }
+  if (mode === "full-price-backfill") {
+    return mode;
+  }
+  throw new Error(`Unsupported sync mode: ${String(mode)}`);
+}
+async function handler(event) {
   try {
-    const result = await syncFuelDataInternal();
+    const result = await syncFuelDataInternal({
+      mode: getSyncModeFromEvent(event)
+    });
     if (!result.success) {
       console.error("Lambda sync failed:", result.error);
       throw new Error(result.error);
