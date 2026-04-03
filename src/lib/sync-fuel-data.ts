@@ -6,15 +6,28 @@ import {
   type FuelFinderPriceStation,
   type SupportedFuelType,
 } from "@/lib/fuel-api";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
-const UPSERT_CHUNK_SIZE = 50;
+const STATION_UPSERT_CHUNK_SIZE = 250;
+const PRICE_HISTORY_INSERT_CHUNK_SIZE = 1_000;
+const CURRENT_PRICE_UPSERT_CHUNK_SIZE = 500;
+const INCREMENTAL_SYNC_SAFETY_BUFFER_MS = 10 * 60 * 1_000;
 
 type PriceInsertCandidate = {
   stationId: string;
   fuelType: SupportedFuelType;
   price: number;
   timestamp: Date;
+};
+
+type StationUpsertRow = {
+  id: string;
+  brand: string | null;
+  address: string | null;
+  postcode: string | null;
+  lat: number;
+  lng: number;
 };
 
 export type FuelSyncResult =
@@ -26,7 +39,9 @@ export type FuelSyncResult =
         priceBatchCount: number;
         syncedStations: number;
         insertedPriceChanges: number;
+        syncedCurrentPrices: number;
         durationSeconds: number;
+        incrementalStartTimestamp: string | null;
       };
     }
   | {
@@ -70,7 +85,79 @@ function toNumber(value: number | string | null | undefined) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-async function upsertForecourtBatch(batch: FuelFinderForecourt[]) {
+function getKey(stationId: string, fuelType: SupportedFuelType) {
+  return `${stationId}:${fuelType}`;
+}
+
+function toIncrementalStartTimestamp(timestamp: Date | null | undefined) {
+  if (!timestamp) {
+    return undefined;
+  }
+
+  return new Date(
+    Math.max(timestamp.getTime() - INCREMENTAL_SYNC_SAFETY_BUFFER_MS, 0),
+  ).toISOString();
+}
+
+async function getKnownStationIds() {
+  const knownStations = await prisma.station.findMany({
+    select: {
+      id: true,
+    },
+  });
+
+  return new Set(knownStations.map((station) => station.id));
+}
+
+async function getIncrementalStartTimestamp() {
+  const [latestCurrentPrice, latestPriceHistory, latestStation] = await prisma.$transaction([
+    prisma.currentPrice.aggregate({
+      _max: {
+        timestamp: true,
+      },
+    }),
+    prisma.priceHistory.aggregate({
+      _max: {
+        timestamp: true,
+      },
+    }),
+    prisma.station.aggregate({
+      _max: {
+        updatedAt: true,
+      },
+    }),
+  ]);
+
+  return toIncrementalStartTimestamp(
+    latestCurrentPrice._max.timestamp ??
+      latestPriceHistory._max.timestamp ??
+      latestStation._max.updatedAt,
+  );
+}
+
+async function bulkUpsertStations(stations: StationUpsertRow[]) {
+  for (const stationChunk of chunkArray(stations, STATION_UPSERT_CHUNK_SIZE)) {
+    await prisma.$executeRaw`
+      INSERT INTO "Station" ("id", "brand", "address", "postcode", "lat", "lng")
+      VALUES ${Prisma.join(
+        stationChunk.map(
+          (station) =>
+            Prisma.sql`(${station.id}, ${station.brand}, ${station.address}, ${station.postcode}, ${station.lat}, ${station.lng})`,
+        ),
+      )}
+      ON CONFLICT ("id") DO UPDATE
+      SET
+        "brand" = EXCLUDED."brand",
+        "address" = EXCLUDED."address",
+        "postcode" = EXCLUDED."postcode",
+        "lat" = EXCLUDED."lat",
+        "lng" = EXCLUDED."lng",
+        "updatedAt" = NOW()
+    `;
+  }
+}
+
+async function upsertForecourtBatch(batch: FuelFinderForecourt[], knownStationIds: Set<string>) {
   const stations = batch
     .map((station) => {
       const latitude = toNumber(station.location?.latitude);
@@ -91,16 +178,14 @@ async function upsertForecourtBatch(batch: FuelFinderForecourt[]) {
     })
     .filter((station): station is NonNullable<typeof station> => station !== null);
 
-  for (const stationChunk of chunkArray(stations, UPSERT_CHUNK_SIZE)) {
-    await prisma.$transaction(
-      stationChunk.map((station) =>
-        prisma.station.upsert({
-          where: { id: station.id },
-          update: station,
-          create: station,
-        }),
-      ),
-    );
+  if (stations.length === 0) {
+    return 0;
+  }
+
+  await bulkUpsertStations(stations);
+
+  for (const station of stations) {
+    knownStationIds.add(station.id);
   }
 
   return stations.length;
@@ -132,86 +217,96 @@ function normalizePriceBatch(batch: FuelFinderPriceStation[]) {
   return rows;
 }
 
-async function insertChangedPrices(batch: FuelFinderPriceStation[]) {
-  const incomingRows = normalizePriceBatch(batch);
+async function insertPriceHistoryRows(rows: PriceInsertCandidate[]) {
+  for (const rowChunk of chunkArray(rows, PRICE_HISTORY_INSERT_CHUNK_SIZE)) {
+    await prisma.priceHistory.createMany({
+      data: rowChunk,
+      skipDuplicates: true,
+    });
+  }
+}
+
+async function bulkUpsertCurrentPrices(rows: PriceInsertCandidate[]) {
+  for (const rowChunk of chunkArray(rows, CURRENT_PRICE_UPSERT_CHUNK_SIZE)) {
+    await prisma.$executeRaw`
+      INSERT INTO "CurrentPrice" ("stationId", "fuelType", "price", "timestamp")
+      VALUES ${Prisma.join(
+        rowChunk.map(
+          (row) =>
+            Prisma.sql`(${row.stationId}, ${row.fuelType}, ${row.price}, ${row.timestamp})`,
+        ),
+      )}
+      ON CONFLICT ("stationId", "fuelType") DO UPDATE
+      SET
+        "price" = EXCLUDED."price",
+        "timestamp" = EXCLUDED."timestamp",
+        "updatedAt" = NOW()
+      WHERE "CurrentPrice"."timestamp" <= EXCLUDED."timestamp"
+    `;
+  }
+}
+
+async function insertChangedPrices(batch: FuelFinderPriceStation[], knownStationIds: Set<string>) {
+  const incomingRows = normalizePriceBatch(batch).filter((row) => knownStationIds.has(row.stationId));
 
   if (incomingRows.length === 0) {
-    return 0;
+    return {
+      insertedPriceChanges: 0,
+      syncedCurrentPrices: 0,
+    };
   }
 
   const stationIds = [...new Set(incomingRows.map((row) => row.stationId))];
-  const knownStations = await prisma.station.findMany({
+  const currentPrices = await prisma.currentPrice.findMany({
     where: {
-      id: { in: stationIds },
+      stationId: { in: stationIds },
+      fuelType: { in: ["unleaded", "diesel"] },
     },
     select: {
-      id: true,
-    },
-  });
-
-  const knownStationIds = new Set(knownStations.map((station) => station.id));
-  const filteredRows = incomingRows.filter((row) => knownStationIds.has(row.stationId));
-
-  if (filteredRows.length === 0) {
-    return 0;
-  }
-
-  const latestGroups = await prisma.priceHistory.groupBy({
-    by: ["stationId", "fuelType"],
-    where: {
-      stationId: {
-        in: [...knownStationIds],
-      },
-      fuelType: {
-        in: ["unleaded", "diesel"],
-      },
-    },
-    _max: {
+      stationId: true,
+      fuelType: true,
+      price: true,
       timestamp: true,
     },
   });
 
-  const latestRows =
-    latestGroups.length === 0
-      ? []
-      : await prisma.priceHistory.findMany({
-          where: {
-            OR: latestGroups
-              .filter((group) => group._max.timestamp !== null)
-              .map((group) => ({
-                stationId: group.stationId,
-                fuelType: group.fuelType,
-                timestamp: group._max.timestamp!,
-              })),
-          },
-        });
-
   const latestByStationAndFuel = new Map<string, { price: number; timestamp: Date }>(
-    latestRows.map((row) => [`${row.stationId}:${row.fuelType}`, row] as const),
+    currentPrices.map((row) => [getKey(row.stationId, row.fuelType as SupportedFuelType), row] as const),
   );
 
   const rowsToInsert: PriceInsertCandidate[] = [];
+  const currentPriceUpdates = new Map<string, PriceInsertCandidate>();
 
-  for (const row of filteredRows) {
-    const key = `${row.stationId}:${row.fuelType}`;
+  for (const row of incomingRows) {
+    const key = getKey(row.stationId, row.fuelType);
     const latestRow = latestByStationAndFuel.get(key);
+
+    if (latestRow && row.timestamp.getTime() < latestRow.timestamp.getTime()) {
+      continue;
+    }
 
     if (!latestRow || latestRow.price !== row.price) {
       rowsToInsert.push(row);
-      latestByStationAndFuel.set(key, row);
     }
+
+    latestByStationAndFuel.set(key, row);
+    currentPriceUpdates.set(key, row);
   }
 
-  if (rowsToInsert.length === 0) {
-    return 0;
+  if (rowsToInsert.length > 0) {
+    await insertPriceHistoryRows(rowsToInsert);
   }
 
-  await prisma.priceHistory.createMany({
-    data: rowsToInsert,
-    skipDuplicates: true,
-  });
+  const snapshotRows = [...currentPriceUpdates.values()];
 
-  return rowsToInsert.length;
+  if (snapshotRows.length > 0) {
+    await bulkUpsertCurrentPrices(snapshotRows);
+  }
+
+  return {
+    insertedPriceChanges: rowsToInsert.length,
+    syncedCurrentPrices: snapshotRows.length,
+  };
 }
 
 export async function syncFuelDataInternal(): Promise<FuelSyncResult> {
@@ -221,28 +316,35 @@ export async function syncFuelDataInternal(): Promise<FuelSyncResult> {
     let priceBatchCount = 0;
     let syncedStations = 0;
     let insertedPriceChanges = 0;
+    let syncedCurrentPrices = 0;
+    const knownStationIds = await getKnownStationIds();
+    const incrementalStartTimestamp = await getIncrementalStartTimestamp();
 
-    for await (const forecourtBatch of fuelFinderClient.iterateForecourts()) {
+    for await (const forecourtBatch of fuelFinderClient.iterateForecourts(incrementalStartTimestamp)) {
       stationBatchCount += 1;
-      syncedStations += await upsertForecourtBatch(forecourtBatch);
+      syncedStations += await upsertForecourtBatch(forecourtBatch, knownStationIds);
     }
 
-    for await (const priceBatch of fuelFinderClient.iteratePriceStations()) {
+    for await (const priceBatch of fuelFinderClient.iteratePriceStations(incrementalStartTimestamp)) {
       priceBatchCount += 1;
-      insertedPriceChanges += await insertChangedPrices(priceBatch);
+      const batchResult = await insertChangedPrices(priceBatch, knownStationIds);
+      insertedPriceChanges += batchResult.insertedPriceChanges;
+      syncedCurrentPrices += batchResult.syncedCurrentPrices;
     }
 
     const durationSeconds = Number(((Date.now() - startedAt) / 1000).toFixed(1));
 
     return {
       success: true,
-      message: `Synced ${syncedStations} stations across ${stationBatchCount} batches and inserted ${insertedPriceChanges} changed prices across ${priceBatchCount} batches in ${durationSeconds}s.`,
+      message: `Synced ${syncedStations} stations across ${stationBatchCount} batches, refreshed ${syncedCurrentPrices} current prices, and inserted ${insertedPriceChanges} changed prices across ${priceBatchCount} price batches in ${durationSeconds}s.`,
       stats: {
         stationBatchCount,
         priceBatchCount,
         syncedStations,
         insertedPriceChanges,
+        syncedCurrentPrices,
         durationSeconds,
+        incrementalStartTimestamp: incrementalStartTimestamp ?? null,
       },
     };
   } catch (error) {

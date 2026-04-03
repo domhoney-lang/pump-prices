@@ -5,7 +5,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, RefreshCw } from 'lucide-react';
 
-import { getStationDetails } from '@/app/actions/stations';
+import { getStationDetails, type StationDetailRecord, type StationMapRecord } from '@/app/actions/stations';
 import { syncFuelData } from '@/app/actions/sync';
 import StationDrawer from './StationDrawer';
 
@@ -19,13 +19,13 @@ const MapComponent = dynamic(() => import('./Map'), {
 });
 
 interface ClientMapProps {
-  initialStations: any[];
+  initialStations: StationMapRecord[];
 }
 
 export default function ClientMap({ initialStations }: ClientMapProps) {
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
-  const [selectedStation, setSelectedStation] = useState<any | null>(null);
+  const [selectedStation, setSelectedStation] = useState<StationDetailRecord | null>(null);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [loadingStation, setLoadingStation] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);

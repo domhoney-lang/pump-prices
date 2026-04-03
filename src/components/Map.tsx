@@ -1,12 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
+import type { StationMapRecord } from '@/app/actions/stations';
+
 // Fix for default marker icons in Leaflet with Webpack
-delete (L.Icon.Default.prototype as any)._getIconUrl;
+type LeafletIconDefault = typeof L.Icon.Default.prototype & {
+  _getIconUrl?: string;
+};
+
+delete (L.Icon.Default.prototype as LeafletIconDefault)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
   iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png',
@@ -14,8 +19,8 @@ L.Icon.Default.mergeOptions({
 });
 
 interface MapProps {
-  stations: any[];
-  fuelType: string;
+  stations: StationMapRecord[];
+  fuelType: 'unleaded' | 'diesel';
   onStationSelect: (stationId: string) => void;
 }
 
@@ -49,9 +54,8 @@ export default function Map({ stations, fuelType, onStationSelect }: MapProps) {
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
         {stations.map((station) => {
-          // Find the latest price for the selected fuel type
-          const latestPrice = station.prices?.find(
-            (p: any) => p.fuelType.toLowerCase() === fuelType.toLowerCase()
+          const latestPrice = station.currentPrices?.find(
+            (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
           )?.price;
 
           return (

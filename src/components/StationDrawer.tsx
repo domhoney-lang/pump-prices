@@ -4,31 +4,33 @@ import { Drawer } from 'vaul';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, subDays } from 'date-fns';
 
+import type { StationDetailRecord } from '@/app/actions/stations';
+
 interface StationDrawerProps {
-  station: any;
+  station: StationDetailRecord | null;
   isOpen: boolean;
   onClose: () => void;
-  fuelType: string;
+  fuelType: 'unleaded' | 'diesel';
 }
 
 export default function StationDrawer({ station, isOpen, onClose, fuelType }: StationDrawerProps) {
   if (!station) return null;
 
-  // Filter prices for the selected fuel type and sort by timestamp
   const relevantPrices = station.prices
-    ?.filter((p: any) => p.fuelType.toLowerCase() === fuelType.toLowerCase())
-    .sort((a: any, b: any) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()) || [];
+    .filter((price) => price.fuelType.toLowerCase() === fuelType.toLowerCase())
+    .sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
 
-  // Get last 7 days of data
   const sevenDaysAgo = subDays(new Date(), 7);
   const chartData = relevantPrices
-    .filter((p: any) => new Date(p.timestamp) >= sevenDaysAgo)
-    .map((p: any) => ({
-      date: format(new Date(p.timestamp), 'MMM dd'),
-      price: p.price,
+    .filter((price) => new Date(price.timestamp) >= sevenDaysAgo)
+    .map((price) => ({
+      date: format(new Date(price.timestamp), 'MMM dd'),
+      price: price.price,
     }));
 
-  const latestPrice = relevantPrices.length > 0 ? relevantPrices[relevantPrices.length - 1].price : null;
+  const latestPrice =
+    station.currentPrices.find((price) => price.fuelType.toLowerCase() === fuelType.toLowerCase())
+      ?.price ?? null;
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -75,7 +77,7 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
                       />
                       <Tooltip 
                         contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                        formatter={(value: any) => [`${Number(value).toFixed(1)}p`, 'Price']}
+                        formatter={(value) => [`${Number(value ?? 0).toFixed(1)}p`, 'Price']}
                       />
                       <Line 
                         type="monotone" 
