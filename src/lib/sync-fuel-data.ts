@@ -30,11 +30,18 @@ type StationUpsertRow = {
   lng: number;
 };
 
+export type FuelSyncMode = "incremental" | "full-price-backfill";
+
+type SyncFuelDataOptions = {
+  mode?: FuelSyncMode;
+};
+
 export type FuelSyncResult =
   | {
       success: true;
       message: string;
       stats: {
+        mode: FuelSyncMode;
         stationBatchCount: number;
         priceBatchCount: number;
         syncedStations: number;
@@ -309,8 +316,9 @@ async function insertChangedPrices(batch: FuelFinderPriceStation[], knownStation
   };
 }
 
-export async function syncFuelDataInternal(): Promise<FuelSyncResult> {
+export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): Promise<FuelSyncResult> {
   try {
+    const mode = options.mode ?? "incremental";
     const startedAt = Date.now();
     let stationBatchCount = 0;
     let priceBatchCount = 0;
@@ -318,7 +326,8 @@ export async function syncFuelDataInternal(): Promise<FuelSyncResult> {
     let insertedPriceChanges = 0;
     let syncedCurrentPrices = 0;
     const knownStationIds = await getKnownStationIds();
-    const incrementalStartTimestamp = await getIncrementalStartTimestamp();
+    const incrementalStartTimestamp =
+      mode === "full-price-backfill" ? undefined : await getIncrementalStartTimestamp();
 
     for await (const forecourtBatch of fuelFinderClient.iterateForecourts(incrementalStartTimestamp)) {
       stationBatchCount += 1;
@@ -338,6 +347,7 @@ export async function syncFuelDataInternal(): Promise<FuelSyncResult> {
       success: true,
       message: `Synced ${syncedStations} stations across ${stationBatchCount} batches, refreshed ${syncedCurrentPrices} current prices, and inserted ${insertedPriceChanges} changed prices across ${priceBatchCount} price batches in ${durationSeconds}s.`,
       stats: {
+        mode,
         stationBatchCount,
         priceBatchCount,
         syncedStations,

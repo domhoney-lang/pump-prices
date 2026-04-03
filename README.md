@@ -32,6 +32,7 @@ Set these values before syncing live data:
 
 - Use the in-app `Initial sync` or `Refresh` button to run a manual import.
 - For scheduled imports, call `POST /api/sync` with either `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
+- For a one-off full price backfill, run `npm run sync:fuel-data -- --mode=full-price-backfill`.
 
 ## GitHub Actions Scheduler
 
