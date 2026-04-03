@@ -1,5 +1,8 @@
 name: Sync Fuel Data
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   schedule:
     - cron: "*/30 * * * *"
@@ -38,6 +41,92 @@ jobs:
           test -n "$DIRECT_URL" || { echo "Missing DIRECT_URL secret"; exit 1; }
           test -n "$FUEL_FINDER_CLIENT_ID" || { echo "Missing FUEL_FINDER_CLIENT_ID secret"; exit 1; }
           test -n "$FUEL_FINDER_CLIENT_SECRET" || { echo "Missing FUEL_FINDER_CLIENT_SECRET secret"; exit 1; }
+
+      - name: Print safe secret fingerprints
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DIRECT_URL: ${{ secrets.DIRECT_URL }}
+          FUEL_FINDER_CLIENT_ID: ${{ secrets.FUEL_FINDER_CLIENT_ID }}
+          FUEL_FINDER_CLIENT_SECRET: ${{ secrets.FUEL_FINDER_CLIENT_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import hashlib
+          import os
+
+          def describe(name: str) -> None:
+              value = os.environ.get(name, "")
+              digest = hashlib.sha256(value.encode()).hexdigest() if value else None
+              print(
+                  {
+                      "name": name,
+                      "present": bool(value),
+                      "length": len(value),
+                      "sha256": digest,
+                      "hasLeadingWhitespace": value != value.lstrip(),
+                      "hasTrailingWhitespace": value != value.rstrip(),
+                  }
+              )
+
+          for key in [
+              "DATABASE_URL",
+              "DIRECT_URL",
+              "FUEL_FINDER_CLIENT_ID",
+              "FUEL_FINDER_CLIENT_SECRET",
+          ]:
+              describe(key)
+          PY
+
+      - name: Probe Fuel Finder token endpoint
+        env:
+          FUEL_FINDER_CLIENT_ID: ${{ secrets.FUEL_FINDER_CLIENT_ID }}
+          FUEL_FINDER_CLIENT_SECRET: ${{ secrets.FUEL_FINDER_CLIENT_SECRET }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.error
+          import urllib.request
+
+          payload = json.dumps(
+              {
+                  "client_id": os.environ["FUEL_FINDER_CLIENT_ID"],
+                  "client_secret": os.environ["FUEL_FINDER_CLIENT_SECRET"],
+              }
+          ).encode()
+
+          request = urllib.request.Request(
+              "https://www.fuel-finder.service.gov.uk/api/v1/oauth/generate_access_token",
+              data=payload,
+              method="POST",
+              headers={"Content-Type": "application/json"},
+          )
+
+          try:
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  body = json.loads(response.read().decode())
+                  token_data = body.get("data", body)
+                  print(
+                      json.dumps(
+                          {
+                              "status": response.status,
+                              "success": body.get("success"),
+                              "hasAccessToken": bool(token_data.get("access_token")),
+                              "expiresIn": token_data.get("expires_in"),
+                          }
+                      )
+                  )
+          except urllib.error.HTTPError as error:
+              print(
+                  json.dumps(
+                      {
+                          "status": error.code,
+                          "body": error.read().decode(),
+                      }
+                  )
+              )
+              sys.exit(1)
+          PY
 
       - name: Run fuel sync directly
         env:
