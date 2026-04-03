@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "prisma generate && next build",
     "build:lambda": "prisma generate && node scripts/build-lambda.mjs",
+    "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
     "sync:fuel-data": "tsx scripts/sync-fuel-data.ts"
