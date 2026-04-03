@@ -49,8 +49,18 @@ jobs:
             --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
             --zip-file fileb://lambda-sync-fuel-data.zip
 
+      - name: Wait for Lambda code update
+        run: |
+          aws lambda wait function-updated \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}"
+
       - name: Update Lambda environment variables
         run: |
           aws lambda update-function-configuration \
             --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
             --environment "Variables={DATABASE_URL=${{ secrets.DATABASE_URL }},DIRECT_URL=${{ secrets.DIRECT_URL }},FUEL_FINDER_CLIENT_ID=${{ secrets.FUEL_FINDER_CLIENT_ID }},FUEL_FINDER_CLIENT_SECRET=${{ secrets.FUEL_FINDER_CLIENT_SECRET }}}"
+
+      - name: Wait for Lambda configuration update
+        run: |
+          aws lambda wait function-updated \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}"
