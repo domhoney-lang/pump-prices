@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, RefreshCw } from 'lucide-react';
@@ -41,6 +41,8 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
+  const lastBoundsKeyRef = useRef<string | null>(null);
+  const viewportRequestIdRef = useRef(0);
 
   const hasStations = stations.length > 0;
   const stationSummary = useMemo(() => {
@@ -92,21 +94,44 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     }
   };
 
-  const handleViewportChange = async (bounds: StationBoundsInput) => {
+  const handleViewportChange = useCallback(async (bounds: StationBoundsInput) => {
+    const boundsKey = [
+      bounds.south.toFixed(4),
+      bounds.west.toFixed(4),
+      bounds.north.toFixed(4),
+      bounds.east.toFixed(4),
+    ].join(':');
+
+    if (lastBoundsKeyRef.current === boundsKey) {
+      return;
+    }
+
+    lastBoundsKeyRef.current = boundsKey;
+    const requestId = ++viewportRequestIdRef.current;
     setLoadingStations(true);
     setSyncError(null);
 
     try {
       const result = await getStationsInBounds(bounds);
+      if (requestId !== viewportRequestIdRef.current) {
+        return;
+      }
+
       setStations(result.stations);
       setMatchingStationCount(result.matchingStationCount);
     } catch (error) {
+      if (requestId !== viewportRequestIdRef.current) {
+        return;
+      }
+
       console.error('Failed to load visible stations', error);
       setSyncError('Could not load stations for the current map view.');
     } finally {
-      setLoadingStations(false);
+      if (requestId === viewportRequestIdRef.current) {
+        setLoadingStations(false);
+      }
     }
-  };
+  }, []);
 
   return (
     <div className="relative h-full w-full">
