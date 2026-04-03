@@ -6,7 +6,6 @@ env:
   LAMBDA_MEMORY_SIZE: "1024"
   LAMBDA_TIMEOUT_SECONDS: "600"
   LAMBDA_EPHEMERAL_STORAGE_MB: "512"
-  LAMBDA_RESERVED_CONCURRENCY: "1"
 
 on:
   workflow_dispatch:
@@ -73,9 +72,3 @@ jobs:
         run: |
           aws lambda wait function-updated \
             --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}"
-
-      - name: Set Lambda reserved concurrency
-        run: |
-          aws lambda put-function-concurrency \
-            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
-            --reserved-concurrent-executions "${{ env.LAMBDA_RESERVED_CONCURRENCY }}"

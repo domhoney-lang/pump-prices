@@ -75,7 +75,6 @@ The deploy workflow also enforces production-oriented Lambda settings:
 - `1024 MB` memory
 - `600s` timeout
 - `512 MB` ephemeral storage
-- reserved concurrency of `1` to avoid overlapping sync runs
 
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
