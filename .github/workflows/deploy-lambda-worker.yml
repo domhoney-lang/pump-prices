@@ -3,6 +3,11 @@ name: Deploy Lambda Worker
 env:
   AWS_REGION: eu-west-2
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  LAMBDA_ARCHITECTURE: x86_64
+  LAMBDA_MEMORY_SIZE: "1024"
+  LAMBDA_TIMEOUT_SECONDS: "600"
+  LAMBDA_EPHEMERAL_STORAGE_MB: "512"
+  LAMBDA_RESERVED_CONCURRENCY: "1"
 
 on:
   workflow_dispatch:
@@ -58,9 +63,21 @@ jobs:
         run: |
           aws lambda update-function-configuration \
             --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
-            --environment "Variables={DATABASE_URL=${{ secrets.DATABASE_URL }},DIRECT_URL=${{ secrets.DIRECT_URL }},FUEL_FINDER_CLIENT_ID=${{ secrets.FUEL_FINDER_CLIENT_ID }},FUEL_FINDER_CLIENT_SECRET=${{ secrets.FUEL_FINDER_CLIENT_SECRET }}}"
+            --runtime nodejs20.x \
+            --handler sync-fuel-data.handler \
+            --architectures "${{ env.LAMBDA_ARCHITECTURE }}" \
+            --memory-size "${{ env.LAMBDA_MEMORY_SIZE }}" \
+            --timeout "${{ env.LAMBDA_TIMEOUT_SECONDS }}" \
+            --ephemeral-storage "{\"Size\":${{ env.LAMBDA_EPHEMERAL_STORAGE_MB }}}" \
+            --environment "Variables={NODE_ENV=production,DATABASE_URL=${{ secrets.DATABASE_URL }},DIRECT_URL=${{ secrets.DIRECT_URL }},FUEL_FINDER_CLIENT_ID=${{ secrets.FUEL_FINDER_CLIENT_ID }},FUEL_FINDER_CLIENT_SECRET=${{ secrets.FUEL_FINDER_CLIENT_SECRET }}}"
 
       - name: Wait for Lambda configuration update
         run: |
           aws lambda wait function-updated \
             --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}"
+
+      - name: Set Lambda reserved concurrency
+        run: |
+          aws lambda put-function-concurrency \
+            --function-name "${{ vars.LAMBDA_FUNCTION_NAME }}" \
+            --reserved-concurrent-executions "${{ env.LAMBDA_RESERVED_CONCURRENCY }}"

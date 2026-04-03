@@ -67,6 +67,17 @@ The Lambda bundle is built from `src/lambda/sync-fuel-data.ts` using:
 npm run build:lambda
 ```
 
+The deploy workflow also enforces production-oriented Lambda settings:
+
+- `NODE_ENV=production`
+- `nodejs20.x` runtime
+- `sync-fuel-data.handler` handler
+- `x86_64` architecture
+- `1024 MB` memory
+- `600s` timeout
+- `512 MB` ephemeral storage
+- reserved concurrency of `1` to avoid overlapping sync runs
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
