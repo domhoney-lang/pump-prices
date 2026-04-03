@@ -291,22 +291,30 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       />
 
       {hasStations && (
-        <div className="pointer-events-auto absolute bottom-3 left-3 right-3 z-20 sm:bottom-6 sm:left-auto sm:right-6">
-          <div className="mx-auto flex w-full max-w-xs flex-col gap-2 rounded-2xl border border-gray-100 bg-white/95 p-4 shadow-lg backdrop-blur-sm sm:mx-0 sm:w-auto sm:max-w-none">
-            <h3 className="mb-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+        <div className="pointer-events-auto absolute bottom-20 left-3 right-3 z-20 sm:bottom-6 sm:left-auto sm:right-6">
+          <div className="mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/95 px-4 py-3 shadow-lg backdrop-blur-sm sm:mx-0 sm:w-auto sm:max-w-none">
+            <h3 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-gray-500">
               Price Guide
             </h3>
-            <div className="flex items-center gap-3">
-              <div className="h-3 w-3 rounded-full bg-emerald-500"></div>
-              <span className="text-sm font-medium text-gray-700">Cheapest 20%</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="h-3 w-3 rounded-full bg-amber-500"></div>
-              <span className="text-sm font-medium text-gray-700">Average</span>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="h-3 w-3 rounded-full bg-rose-500"></div>
-              <span className="text-sm font-medium text-gray-700">Most Expensive</span>
+            <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
+                <span className="truncate text-xs font-medium text-gray-700 sm:text-sm">
+                  Cheapest 20%
+                </span>
+              </div>
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="h-3 w-3 shrink-0 rounded-full bg-amber-500"></div>
+                <span className="truncate text-xs font-medium text-gray-700 sm:text-sm">
+                  Average
+                </span>
+              </div>
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="h-3 w-3 shrink-0 rounded-full bg-rose-500"></div>
+                <span className="truncate text-xs font-medium text-gray-700 sm:text-sm">
+                  Most Expensive
+                </span>
+              </div>
             </div>
           </div>
         </div>
