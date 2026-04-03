@@ -115,14 +115,17 @@ export default function Map({
   const defaultZoom = 6;
 
   const createCustomIcon = (price: number | undefined) => {
-    const priceText = price ? price.toFixed(1) : 'N/A';
+    const priceText = price ? `${price.toFixed(1)}p` : 'N/A';
+    const width = Math.max(46, priceText.length * 10 + 16);
+    const height = 28;
+
     return L.divIcon({
       className: 'custom-marker',
       html: `<div class="bg-blue-600 text-white font-bold px-2 py-1 rounded-md shadow-md text-sm whitespace-nowrap border border-white">
-               ${priceText}p
+               ${priceText}
              </div>`,
-      iconSize: [40, 24],
-      iconAnchor: [20, 24],
+      iconSize: [width, height],
+      iconAnchor: [Math.round(width / 2), height],
     });
   };
 
