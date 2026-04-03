@@ -145,11 +145,11 @@ async function getIncrementalStartTimestamp() {
 async function bulkUpsertStations(stations: StationUpsertRow[]) {
   for (const stationChunk of chunkArray(stations, STATION_UPSERT_CHUNK_SIZE)) {
     await prisma.$executeRaw`
-      INSERT INTO "Station" ("id", "brand", "address", "postcode", "lat", "lng")
+      INSERT INTO "Station" ("id", "brand", "address", "postcode", "lat", "lng", "createdAt", "updatedAt")
       VALUES ${Prisma.join(
         stationChunk.map(
           (station) =>
-            Prisma.sql`(${station.id}, ${station.brand}, ${station.address}, ${station.postcode}, ${station.lat}, ${station.lng})`,
+            Prisma.sql`(${station.id}, ${station.brand}, ${station.address}, ${station.postcode}, ${station.lat}, ${station.lng}, NOW(), NOW())`,
         ),
       )}
       ON CONFLICT ("id") DO UPDATE
