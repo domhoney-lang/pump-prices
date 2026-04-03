@@ -95,6 +95,14 @@ export function getPriceTimestamp(price: FuelFinderPrice): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+function isMissingBatchError(details?: string) {
+  if (!details) {
+    return false;
+  }
+
+  return details.includes("Requested batch") && details.includes("is not available");
+}
+
 export class FuelFinderClient {
   private accessToken: string | null = null;
   private tokenExpiresAt = 0;
@@ -199,21 +207,30 @@ export class FuelFinderClient {
   }
 
   async *iterateForecourts(effectiveStartTimestamp?: string): AsyncGenerator<FuelFinderForecourt[]> {
-    yield* this.iterateBatches((batchNumber) =>
-      this.fetchForecourtBatch(batchNumber, effectiveStartTimestamp),
+    yield* this.iterateBatches(
+      (batchNumber) => this.fetchForecourtBatch(batchNumber, effectiveStartTimestamp),
+      {
+        allowInitialBatch404: Boolean(effectiveStartTimestamp),
+      },
     );
   }
 
   async *iteratePriceStations(
     effectiveStartTimestamp?: string,
   ): AsyncGenerator<FuelFinderPriceStation[]> {
-    yield* this.iterateBatches((batchNumber) =>
-      this.fetchPriceBatch(batchNumber, effectiveStartTimestamp),
+    yield* this.iterateBatches(
+      (batchNumber) => this.fetchPriceBatch(batchNumber, effectiveStartTimestamp),
+      {
+        allowInitialBatch404: Boolean(effectiveStartTimestamp),
+      },
     );
   }
 
   private async *iterateBatches<T>(
     fetchBatch: (batchNumber: number) => Promise<T[]>,
+    options?: {
+      allowInitialBatch404?: boolean;
+    },
   ): AsyncGenerator<T[]> {
     for (let batchNumber = 1; ; batchNumber += 1) {
       try {
@@ -229,8 +246,14 @@ export class FuelFinderClient {
           break;
         }
       } catch (error) {
-        if (error instanceof FuelFinderApiError && error.status === 404 && batchNumber > 1) {
-          break;
+        if (error instanceof FuelFinderApiError && error.status === 404) {
+          if (batchNumber > 1) {
+            break;
+          }
+
+          if (options?.allowInitialBatch404 && isMissingBatchError(error.details)) {
+            break;
+          }
         }
 
         throw error;
