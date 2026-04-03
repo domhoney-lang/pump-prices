@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Fuel, RefreshCw } from 'lucide-react';
+import { Fuel, LocateFixed, RefreshCw } from 'lucide-react';
 
 import {
   getStationDetails,
@@ -29,6 +29,11 @@ interface ClientMapProps {
   totalStationCount: number;
 }
 
+type UserLocation = {
+  lat: number;
+  lng: number;
+};
+
 export default function ClientMap({ initialStations, totalStationCount }: ClientMapProps) {
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
@@ -37,7 +42,9 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [loadingStation, setLoadingStation] = useState(false);
   const [loadingStations, setLoadingStations] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
@@ -92,6 +99,40 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     } finally {
       setLoadingStation(false);
     }
+  };
+
+  const handleLocateUser = () => {
+    if (!navigator.geolocation) {
+      setSyncError('Geolocation is not supported by this browser.');
+      return;
+    }
+
+    setIsLocating(true);
+    setSyncError(null);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setIsLocating(false);
+      },
+      (error) => {
+        const message =
+          error.code === error.PERMISSION_DENIED
+            ? 'Location permission was denied.'
+            : 'Could not determine your location.';
+
+        setSyncError(message);
+        setIsLocating(false);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 60000,
+      },
+    );
   };
 
   const handleViewportChange = useCallback(async (bounds: StationBoundsInput) => {
@@ -173,6 +214,16 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
               </div>
 
               <button
+                onClick={handleLocateUser}
+                disabled={isLocating}
+                className="inline-flex items-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                title="Use my location"
+              >
+                <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
+                {isLocating ? 'Locating...' : 'My location'}
+              </button>
+
+              <button
                 onClick={handleSync}
                 disabled={isSyncing}
                 className="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -201,6 +252,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       <MapComponent
         stations={stations}
         fuelType={fuelType}
+        focusLocation={userLocation}
         onStationSelect={handleStationSelect}
         onViewportChange={handleViewportChange}
       />

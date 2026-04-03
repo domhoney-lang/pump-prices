@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import { MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
+import { CircleMarker, MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -22,6 +22,7 @@ L.Icon.Default.mergeOptions({
 interface MapProps {
   stations: StationMapRecord[];
   fuelType: 'unleaded' | 'diesel';
+  focusLocation: { lat: number; lng: number } | null;
   onStationSelect: (stationId: string) => void;
   onViewportChange: (bounds: StationBoundsInput) => void;
 }
@@ -81,7 +82,34 @@ function ViewportSync({
   return null;
 }
 
-export default function Map({ stations, fuelType, onStationSelect, onViewportChange }: MapProps) {
+function FocusLocation({
+  focusLocation,
+}: {
+  focusLocation: { lat: number; lng: number } | null;
+}) {
+  const map = useMap();
+
+  useEffect(() => {
+    if (!focusLocation) {
+      return;
+    }
+
+    map.flyTo([focusLocation.lat, focusLocation.lng], Math.max(map.getZoom(), 13), {
+      animate: true,
+      duration: 1,
+    });
+  }, [focusLocation, map]);
+
+  return null;
+}
+
+export default function Map({
+  stations,
+  fuelType,
+  focusLocation,
+  onStationSelect,
+  onViewportChange,
+}: MapProps) {
   // Center roughly on the UK
   const defaultCenter: [number, number] = [54.5, -3.0];
   const defaultZoom = 6;
@@ -107,10 +135,23 @@ export default function Map({ stations, fuelType, onStationSelect, onViewportCha
         zoomControl={false}
       >
         <ViewportSync onViewportChange={onViewportChange} />
+        <FocusLocation focusLocation={focusLocation} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
+        {focusLocation && (
+          <CircleMarker
+            center={[focusLocation.lat, focusLocation.lng]}
+            radius={10}
+            pathOptions={{
+              color: '#1d4ed8',
+              fillColor: '#2563eb',
+              fillOpacity: 0.45,
+              weight: 2,
+            }}
+          />
+        )}
         {stations.map((station) => {
           const latestCurrentPrice = station.currentPrices.find(
             (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
