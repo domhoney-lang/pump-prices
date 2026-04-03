@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "build:lambda": "node scripts/build-lambda.mjs",
+    "build:lambda": "prisma generate && node scripts/build-lambda.mjs",
     "start": "next start",
     "lint": "eslint",
     "sync:fuel-data": "tsx scripts/sync-fuel-data.ts"
