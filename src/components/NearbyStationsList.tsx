@@ -5,6 +5,7 @@ import { MapPin, Navigation } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
 import type { StationMapRecord } from '@/app/actions/stations';
+import { getPriceScale, getPriceTextClassName, getPriceTone } from '@/lib/price-colors';
 
 type FocusLocation = {
   lat: number;
@@ -100,6 +101,22 @@ export default function NearbyStationsList({
   className,
 }: NearbyStationsListProps) {
   const [sortMode, setSortMode] = useState<NearbySortMode>('cheapest');
+  const priceScale = useMemo(() => {
+    const normalizedFuelType = fuelType.toLowerCase();
+
+    return getPriceScale(
+      stations.map((station) => {
+        const latestCurrentPrice = station.currentPrices.find(
+          (price) => price.fuelType === normalizedFuelType,
+        );
+        const fallbackPrice = station.fallbackPrices.find(
+          (price) => price.fuelType === normalizedFuelType,
+        );
+
+        return latestCurrentPrice?.price ?? fallbackPrice?.price;
+      }),
+    );
+  }, [fuelType, stations]);
 
   const nearbyStations = useMemo<NearbyStationListItem[]>(() => {
     if (!listOrigin) {
@@ -264,68 +281,72 @@ export default function NearbyStationsList({
           )}
 
           <div className="mt-4 max-h-[24dvh] space-y-2 overflow-y-auto pr-1 sm:max-h-[45dvh]">
-            {nearbyStations.map((item) => (
-              <div
-                key={item.station.id}
-                className={`block w-full rounded-xl border px-4 py-3 text-left transition-colors ${
-                  selectedStationId === item.station.id
-                    ? 'border-blue-200 bg-blue-50/80'
-                    : 'border-gray-100 bg-white hover:bg-gray-50'
-                }`}
-              >
-                <button
-                  type="button"
-                  onClick={() => onStationSelect(item.station.id)}
-                  className="block w-full text-left"
+            {nearbyStations.map((item) => {
+              const priceTextClassName = getPriceTextClassName(getPriceTone(item.price, priceScale));
+
+              return (
+                <div
+                  key={item.station.id}
+                  className={`block w-full rounded-xl border px-4 py-3 text-left transition-colors ${
+                    selectedStationId === item.station.id
+                      ? 'border-blue-200 bg-blue-50/80'
+                      : 'border-gray-100 bg-white hover:bg-gray-50'
+                  }`}
                 >
-                  <div className="flex items-start justify-between gap-3">
-                    <span className="min-w-0 truncate text-sm font-semibold text-gray-900">
-                      {item.station.brand || 'Unknown Brand'}
-                    </span>
-                    <div className="flex shrink-0 items-center gap-2">
-                      {item.freshnessLabel && item.freshnessBadgeClassName && (
+                  <button
+                    type="button"
+                    onClick={() => onStationSelect(item.station.id)}
+                    className="block w-full text-left"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 truncate text-sm font-semibold text-gray-900">
+                        {item.station.brand || 'Unknown Brand'}
+                      </span>
+                      <div className="flex shrink-0 items-center gap-2">
+                        {item.freshnessLabel && item.freshnessBadgeClassName && (
+                          <span
+                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.freshnessBadgeClassName}`}
+                            title={item.freshnessTitle ?? undefined}
+                          >
+                            {item.freshnessLabel}
+                          </span>
+                        )}
                         <span
-                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.freshnessBadgeClassName}`}
+                          className="text-xs text-gray-500"
                           title={item.freshnessTitle ?? undefined}
                         >
-                          {item.freshnessLabel}
+                          {item.freshnessRelativeText ?? 'No recent timestamp'}
                         </span>
-                      )}
-                      <span
-                        className="text-xs text-gray-500"
-                        title={item.freshnessTitle ?? undefined}
-                      >
-                        {item.freshnessRelativeText ?? 'No recent timestamp'}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-end justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-lg font-bold text-gray-900">
-                        {item.price !== null ? `${item.price.toFixed(1)}p` : 'N/A'}
                       </div>
-                      <div className="text-xs text-gray-500">{fuelType}</div>
                     </div>
+                    <div className="mt-3 flex items-end justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className={`text-lg font-bold ${priceTextClassName}`}>
+                          {item.price !== null ? `${item.price.toFixed(1)}p` : 'N/A'}
+                        </div>
+                        <div className="text-xs text-gray-500">{fuelType}</div>
+                      </div>
+                    </div>
+                  </button>
+                  <div className="mt-3 flex items-center justify-between gap-3">
+                    <span className="inline-flex items-center gap-1 text-sm text-gray-600">
+                      <MapPin className="h-3.5 w-3.5" />
+                      {formatDistanceMiles(item.distanceMiles)}
+                    </span>
+                    <a
+                      href={getDirectionsUrl(item.station.lat, item.station.lng)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open directions in Google Maps"
+                      title="Open in Google Maps"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                    >
+                      <Navigation className="h-4 w-4" />
+                    </a>
                   </div>
-                </button>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <span className="inline-flex items-center gap-1 text-sm text-gray-600">
-                    <MapPin className="h-3.5 w-3.5" />
-                    {formatDistanceMiles(item.distanceMiles)}
-                  </span>
-                  <a
-                    href={getDirectionsUrl(item.station.lat, item.station.lng)}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open directions in Google Maps"
-                    title="Open in Google Maps"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
-                  >
-                    <Navigation className="h-4 w-4" />
-                  </a>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </>
       )}

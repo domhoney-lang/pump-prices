@@ -5,7 +5,13 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { format, formatDistanceToNow, subDays } from 'date-fns';
 import { MapPin, Navigation, X } from 'lucide-react';
 
-import type { StationDetailRecord } from '@/app/actions/stations';
+import type { StationDetailRecord, StationMapRecord } from '@/app/actions/stations';
+import {
+  getPriceScale,
+  getPriceSurfaceClassName,
+  getPriceTextClassName,
+  getPriceTone,
+} from '@/lib/price-colors';
 
 type FocusLocation = {
   lat: number;
@@ -14,6 +20,7 @@ type FocusLocation = {
 
 interface StationDrawerProps {
   station: StationDetailRecord | null;
+  stations: StationMapRecord[];
   isOpen: boolean;
   onClose: () => void;
   fuelType: 'unleaded' | 'diesel';
@@ -79,6 +86,7 @@ function getDirectionsUrl(lat: number, lng: number) {
 
 export default function StationDrawer({
   station,
+  stations,
   isOpen,
   onClose,
   fuelType,
@@ -103,6 +111,19 @@ export default function StationDrawer({
   );
   const latestHistoricalPrice = relevantPrices.at(-1)?.price ?? null;
   const latestPrice = latestCurrentPrice?.price ?? latestHistoricalPrice;
+  const priceScale = getPriceScale(
+    stations.map((mapStation) => {
+      const currentPrice = mapStation.currentPrices.find(
+        (price) => price.fuelType === fuelType.toLowerCase(),
+      );
+      const fallbackPrice = mapStation.fallbackPrices.find(
+        (price) => price.fuelType === fuelType.toLowerCase(),
+      );
+
+      return currentPrice?.price ?? fallbackPrice?.price;
+    }),
+  );
+  const priceTone = getPriceTone(latestPrice, priceScale);
   const freshnessTimestamp = latestCurrentPrice?.timestamp
     ? new Date(latestCurrentPrice.timestamp)
     : relevantPrices.at(-1)?.timestamp
@@ -116,6 +137,8 @@ export default function StationDrawer({
     ? `Price reported ${format(freshnessTimestamp, 'PPpp')}`
     : undefined;
   const distanceMiles = focusLocation ? getDistanceMiles(focusLocation, station) : null;
+  const priceSurfaceClassName = getPriceSurfaceClassName(priceTone);
+  const priceTextClassName = getPriceTextClassName(priceTone);
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -169,10 +192,14 @@ export default function StationDrawer({
                 </div>
               </div>
 
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50/30 rounded-2xl p-5 mb-8 border border-blue-100/50 flex justify-between items-center shadow-sm">
+              <div
+                className={`mb-8 flex items-center justify-between rounded-2xl border p-5 shadow-sm ${priceSurfaceClassName}`}
+              >
                 <div>
-                  <p className="text-sm font-medium text-blue-600/80 uppercase tracking-wider mb-1">{fuelType}</p>
-                  <p className="text-4xl font-extrabold text-blue-700 tracking-tight">
+                  <p className="mb-1 text-sm font-medium uppercase tracking-wider text-gray-600">
+                    {fuelType}
+                  </p>
+                  <p className={`text-4xl font-extrabold tracking-tight ${priceTextClassName}`}>
                     {latestPrice ? `${latestPrice.toFixed(1)}p` : 'N/A'}
                   </p>
                   {freshnessLabel ? (

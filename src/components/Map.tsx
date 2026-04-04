@@ -6,6 +6,7 @@ import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
 import type { StationBoundsInput, StationMapRecord } from '@/app/actions/stations';
+import { getMapPriceColorClasses, getPriceScale, getPriceTone } from '@/lib/price-colors';
 
 // Fix for default marker icons in Leaflet with Webpack
 type LeafletIconDefault = typeof L.Icon.Default.prototype & {
@@ -259,43 +260,10 @@ export default function Map({
   const shouldClusterMarkers =
     stations.length > CLUSTER_STATION_THRESHOLD && mapZoom < CLUSTER_ZOOM_THRESHOLD;
 
-  const { cheapThreshold, expensiveThreshold, absoluteCheapestPrice } = useMemo(() => {
-    const validPrices = stationPrices
-      .map((entry) => entry.latestPrice)
-      .filter((price): price is number => price !== undefined)
-      .sort((a, b) => a - b);
-
-    if (validPrices.length === 0) {
-      return {
-        cheapThreshold: 0,
-        expensiveThreshold: Infinity,
-        absoluteCheapestPrice: null as number | null,
-      };
-    }
-
-    const cheapIndex = Math.floor(validPrices.length * 0.2);
-    const expensiveIndex = Math.floor(validPrices.length * 0.8);
-
-    return {
-      cheapThreshold: validPrices[cheapIndex] || validPrices[0],
-      expensiveThreshold: validPrices[expensiveIndex] || validPrices[validPrices.length - 1],
-      absoluteCheapestPrice: validPrices[0],
-    };
-  }, [stationPrices]);
-
-  const getPriceColorClasses = useCallback((price: number | undefined) => {
-    if (!price) return { bg: 'bg-gray-500', hoverBg: 'group-hover:bg-gray-600', border: 'border-t-gray-500', hoverBorder: 'group-hover:border-t-gray-600', ring: 'bg-gray-500/30' };
-    
-    if (price <= cheapThreshold) {
-      // Green for bottom 20%
-      return { bg: 'bg-emerald-600', hoverBg: 'group-hover:bg-emerald-700', border: 'border-t-emerald-600', hoverBorder: 'group-hover:border-t-emerald-700', ring: 'bg-emerald-600/30' };
-    } else if (price >= expensiveThreshold) {
-      // Red for top 20%
-      return { bg: 'bg-rose-600', hoverBg: 'group-hover:bg-rose-700', border: 'border-t-rose-600', hoverBorder: 'group-hover:border-t-rose-700', ring: 'bg-rose-600/30' };
-    }
-    // Blue/Yellow/Neutral for the middle 60%
-    return { bg: 'bg-amber-500', hoverBg: 'group-hover:bg-amber-600', border: 'border-t-amber-500', hoverBorder: 'group-hover:border-t-amber-600', ring: 'bg-amber-500/30' };
-  }, [cheapThreshold, expensiveThreshold]);
+  const priceScale = useMemo(
+    () => getPriceScale(stationPrices.map((entry) => entry.latestPrice)),
+    [stationPrices],
+  );
 
   const createCustomIcon = useCallback((
     price: number | undefined,
@@ -305,7 +273,7 @@ export default function Map({
     const priceText = price ? `${price.toFixed(1)}p` : 'N/A';
     const width = Math.max(48, priceText.length * 10 + 20);
     const height = 30;
-    const colors = getPriceColorClasses(price);
+    const colors = getMapPriceColorClasses(getPriceTone(price, priceScale));
     const selectionClasses = isSelected
       ? {
           ring: 'opacity-100 scale-110',
@@ -332,7 +300,7 @@ export default function Map({
       iconSize: [width, height],
       iconAnchor: [Math.round(width / 2), height + 6],
     });
-  }, [getPriceColorClasses]);
+  }, [priceScale]);
 
   const stationMarkers = useMemo(() => {
     return stationPrices.map(({ station, latestPrice }) => ({
@@ -340,11 +308,11 @@ export default function Map({
       latestPrice,
       icon: createCustomIcon(
         latestPrice,
-        latestPrice !== undefined && latestPrice === absoluteCheapestPrice,
+        latestPrice !== undefined && latestPrice === priceScale.absoluteCheapestPrice,
         station.id === selectedStationId,
       ),
     }));
-  }, [absoluteCheapestPrice, createCustomIcon, selectedStationId, stationPrices]);
+  }, [createCustomIcon, priceScale.absoluteCheapestPrice, selectedStationId, stationPrices]);
 
   const clusteredMarkers = useMemo<StationClusterEntry[]>(() => {
     if (!shouldClusterMarkers) {

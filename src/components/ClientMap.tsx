@@ -938,6 +938,7 @@ export default function ClientMap({
 
       <StationDrawer
         station={selectedStation}
+        stations={stations}
         isOpen={isDrawerOpen}
         onClose={() => {
           setIsDrawerOpen(false);
