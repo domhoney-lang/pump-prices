@@ -3,21 +3,112 @@ Changelog:
 - Location search, geolocation focus, and station detail drawer for nearby stations.
 - Manual sync, protected `/api/sync` endpoint, GitHub Actions scheduling, and Lambda backfill support.
 
-## Getting Started
+## Local Development
 
-First, run the development server:
+### Quick Start
+
+Use this flow if you want to run the app entirely on your machine with a local Prisma dev database.
+
+1. Install dependencies:
+
+```bash
+npm install
+```
+
+2. Create your local env file if you do not already have one:
+
+```bash
+cp .env.example .env.local
+```
+
+3. Start a local Prisma dev database:
+
+```bash
+npx prisma dev -d --name pump-prices-local
+```
+
+That command prints a local Postgres connection string such as:
+
+```bash
+postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable
+```
+
+4. Put that local connection string into `DATABASE_URL` and `DIRECT_URL` in `.env.local`.
+
+Example:
+
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable&pgbouncer=true&statement_cache_size=0"
+DIRECT_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable"
+```
+
+5. Push the Prisma schema into the local database:
+
+```bash
+env DATABASE_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable" \
+DIRECT_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable" \
+npx prisma db push
+```
+
+6. Run a one-time full local data backfill so the map has prices:
+
+```bash
+npm run sync:fuel-data -- --mode=full-price-backfill
+```
+
+7. Start the Next.js app:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+8. Open [http://localhost:3000](http://localhost:3000).
+
+### Day-To-Day Local Run Flow
+
+After the first setup, the normal local workflow is:
+
+1. Start the Prisma dev database:
+
+```bash
+npx prisma dev -d --name pump-prices-local
+```
+
+2. Start the app:
+
+```bash
+npm run dev
+```
+
+3. Open [http://localhost:3000](http://localhost:3000).
+
+4. Pull fresh fuel prices when needed:
+
+```bash
+npm run sync:fuel-data
+```
+
+If the map loads but many markers show `N/A`, your local database probably has station records without current prices yet. Run the full backfill again:
+
+```bash
+npm run sync:fuel-data -- --mode=full-price-backfill
+```
+
+### Starting The App Locally
+
+If local setup has already been completed and `.env.local` points at your local Prisma database, starting the app is just:
+
+```bash
+npm run dev
+```
+
+Then visit [http://localhost:3000](http://localhost:3000).
+
+If port `3000` is already in use, Next.js will either prompt for another port or you can choose one explicitly:
+
+```bash
+npm run dev -- --port 3001
+```
 
 ## Environment
 
@@ -30,6 +121,8 @@ Set these values before syncing live data:
 - `FUEL_FINDER_CLIENT_ID`
 - `FUEL_FINDER_CLIENT_SECRET`
 - `CRON_SECRET` for the scheduled sync endpoint
+
+For local development, `DATABASE_URL` and `DIRECT_URL` can point to the local Prisma dev database instead of Supabase.
 
 ## Syncing Fuel Data
 

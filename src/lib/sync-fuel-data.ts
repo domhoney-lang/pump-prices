@@ -236,11 +236,11 @@ async function insertPriceHistoryRows(rows: PriceInsertCandidate[]) {
 async function bulkUpsertCurrentPrices(rows: PriceInsertCandidate[]) {
   for (const rowChunk of chunkArray(rows, CURRENT_PRICE_UPSERT_CHUNK_SIZE)) {
     await prisma.$executeRaw`
-      INSERT INTO "CurrentPrice" ("stationId", "fuelType", "price", "timestamp")
+      INSERT INTO "CurrentPrice" ("stationId", "fuelType", "price", "timestamp", "createdAt", "updatedAt")
       VALUES ${Prisma.join(
         rowChunk.map(
           (row) =>
-            Prisma.sql`(${row.stationId}, ${row.fuelType}, ${row.price}, ${row.timestamp})`,
+            Prisma.sql`(${row.stationId}, ${row.fuelType}, ${row.price}, ${row.timestamp}, NOW(), NOW())`,
         ),
       )}
       ON CONFLICT ("stationId", "fuelType") DO UPDATE
