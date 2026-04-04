@@ -42,6 +42,23 @@ type UserLocation = {
 const FOCUS_REFRESH_COOLDOWN_MS = 60_000;
 const LOCATION_SUGGESTION_DEBOUNCE_MS = 250;
 
+function getGeolocationErrorMessage(error: GeolocationPositionError) {
+  if (!window.isSecureContext) {
+    return 'Location works only on HTTPS or http://localhost. Open the app on localhost and try again.';
+  }
+
+  switch (error.code) {
+    case error.PERMISSION_DENIED:
+      return 'Location permission was denied.';
+    case error.POSITION_UNAVAILABLE:
+      return 'Your browser could not determine a position. Check system location services and try again.';
+    case error.TIMEOUT:
+      return 'Location request timed out. Try again once your device has a network or GPS fix.';
+    default:
+      return error.message || 'Could not determine your location.';
+  }
+}
+
 export default function ClientMap({ initialStations, totalStationCount }: ClientMapProps) {
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
@@ -143,10 +160,13 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         setIsLocating(false);
       },
       (error) => {
-        const message =
-          error.code === error.PERMISSION_DENIED
-            ? 'Location permission was denied.'
-            : 'Could not determine your location.';
+        const message = getGeolocationErrorMessage(error);
+
+        console.warn('Geolocation lookup failed', {
+          code: error.code,
+          message: error.message,
+          secureContext: window.isSecureContext,
+        });
 
         if (!options?.silent) {
           setSyncError(message);
