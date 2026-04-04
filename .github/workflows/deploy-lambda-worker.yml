@@ -66,7 +66,7 @@ jobs:
             --memory-size "${{ env.LAMBDA_MEMORY_SIZE }}" \
             --timeout "${{ env.LAMBDA_TIMEOUT_SECONDS }}" \
             --ephemeral-storage "{\"Size\":${{ env.LAMBDA_EPHEMERAL_STORAGE_MB }}}" \
-            --environment "Variables={NODE_ENV=production,DATABASE_URL=${{ secrets.DATABASE_URL }},DIRECT_URL=${{ secrets.DIRECT_URL }},FUEL_FINDER_CLIENT_ID=${{ secrets.FUEL_FINDER_CLIENT_ID }},FUEL_FINDER_CLIENT_SECRET=${{ secrets.FUEL_FINDER_CLIENT_SECRET }}}"
+            --environment "Variables={NODE_ENV=production,APP_URL=${{ vars.APP_URL }},CRON_SECRET=${{ secrets.CRON_SECRET }},DATABASE_URL=${{ secrets.DATABASE_URL }},DIRECT_URL=${{ secrets.DIRECT_URL }},FUEL_FINDER_CLIENT_ID=${{ secrets.FUEL_FINDER_CLIENT_ID }},FUEL_FINDER_CLIENT_SECRET=${{ secrets.FUEL_FINDER_CLIENT_SECRET }}}"
 
       - name: Wait for Lambda configuration update
         run: |

@@ -2,7 +2,7 @@
 
 import { format, formatDistanceToNow } from 'date-fns';
 import { MapPin, Navigation } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type Ref } from 'react';
 
 import type { PriceBenchmark, StationMapRecord } from '@/app/actions/stations';
 import { getPriceScale, getPriceTextClassName, getPriceTone } from '@/lib/price-colors';
@@ -21,6 +21,7 @@ interface NearbyStationsListProps {
   selectedStationId: string | null;
   onStationSelect: (stationId: string) => void;
   className?: string;
+  containerRef?: Ref<HTMLElement>;
 }
 
 type NearbyStationListItem = {
@@ -101,6 +102,7 @@ export default function NearbyStationsList({
   selectedStationId,
   onStationSelect,
   className,
+  containerRef,
 }: NearbyStationsListProps) {
   const [sortMode, setSortMode] = useState<NearbySortMode>('cheapest');
   const priceScale = useMemo(() => {
@@ -223,6 +225,7 @@ export default function NearbyStationsList({
 
   return (
     <section
+      ref={containerRef}
       className={`pointer-events-auto rounded-2xl border border-gray-100 bg-white/90 p-4 shadow-xl backdrop-blur-md ${
         className ?? ''
       }`}

@@ -19,6 +19,34 @@ function getSyncModeFromEvent(event: LambdaSyncEvent | null | undefined): FuelSy
   throw new Error(`Unsupported sync mode: ${String(mode)}`);
 }
 
+async function revalidateNationalBenchmarkCache() {
+  const appUrl = process.env.APP_URL;
+  const cronSecret = process.env.CRON_SECRET;
+
+  if (!appUrl || !cronSecret) {
+    console.warn(
+      "Skipping national benchmark revalidation because APP_URL or CRON_SECRET is missing.",
+    );
+    return;
+  }
+
+  const response = await fetch(
+    new URL("/api/internal/revalidate-national-benchmark", appUrl),
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${cronSecret}`,
+      },
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(
+      `National benchmark revalidation failed with ${response.status} ${response.statusText}.`,
+    );
+  }
+}
+
 export async function handler(event?: LambdaSyncEvent) {
   try {
     const result = await syncFuelDataInternal({
@@ -30,6 +58,7 @@ export async function handler(event?: LambdaSyncEvent) {
       throw new Error(result.error);
     }
 
+    await revalidateNationalBenchmarkCache();
     console.info(result.message);
     return result;
   } finally {

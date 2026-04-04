@@ -16,6 +16,7 @@ export default async function Home() {
         stationLimit={initialData.stationLimit}
         initialSelectionMode={initialData.selectionMode}
         initialPriceBenchmark={initialData.priceBenchmark}
+        initialNationalPriceBenchmark={initialData.nationalPriceBenchmark}
         initialBestNearby={initialData.bestNearby}
       />
     </main>

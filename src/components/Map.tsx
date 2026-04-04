@@ -27,8 +27,16 @@ interface MapProps {
   mapFocusLocation: { lat: number; lng: number; zoom?: number } | null;
   userLocation: { lat: number; lng: number } | null;
   selectedStationId: string | null;
+  bestNearbyLocation: { lat: number; lng: number } | null;
+  obstructionRects: Array<{
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+  }>;
   onStationSelect: (stationId: string) => void;
   onViewportChange: (bounds: StationBoundsInput) => void;
+  onBestNearbyVisibilityChange: (isObscured: boolean) => void;
 }
 
 const LOCATION_MARKER_COLOR = '#1d4ed8';
@@ -85,6 +93,9 @@ const DEFAULT_CENTER: [number, number] = [54.5, -3.0];
 const DEFAULT_ZOOM = 6;
 const CLUSTER_ZOOM_THRESHOLD = 12;
 const CLUSTER_STATION_THRESHOLD = 120;
+const BEST_MARKER_HALF_WIDTH_PX = 42;
+const BEST_MARKER_TOP_PADDING_PX = 56;
+const BEST_MARKER_BOTTOM_PADDING_PX = 8;
 
 function emitBounds(map: L.Map, onViewportChange: (bounds: StationBoundsInput) => void) {
   try {
@@ -191,6 +202,83 @@ function FocusLocation({
   return null;
 }
 
+function rectsOverlap(
+  left: { left: number; top: number; right: number; bottom: number },
+  right: { left: number; top: number; right: number; bottom: number },
+) {
+  return (
+    left.left < right.right &&
+    left.right > right.left &&
+    left.top < right.bottom &&
+    left.bottom > right.top
+  );
+}
+
+function isMarkerObscured(
+  map: L.Map,
+  location: { lat: number; lng: number },
+  obstructionRects: Array<{ left: number; top: number; right: number; bottom: number }>,
+) {
+  const point = map.latLngToContainerPoint([location.lat, location.lng]);
+  const mapSize = map.getSize();
+  const markerBounds = {
+    left: point.x - BEST_MARKER_HALF_WIDTH_PX,
+    top: point.y - BEST_MARKER_TOP_PADDING_PX,
+    right: point.x + BEST_MARKER_HALF_WIDTH_PX,
+    bottom: point.y + BEST_MARKER_BOTTOM_PADDING_PX,
+  };
+
+  if (
+    markerBounds.left < 0 ||
+    markerBounds.top < 0 ||
+    markerBounds.right > mapSize.x ||
+    markerBounds.bottom > mapSize.y
+  ) {
+    return true;
+  }
+
+  return obstructionRects.some((rect) => rectsOverlap(markerBounds, rect));
+}
+
+function BestNearbyVisibilitySync({
+  bestNearbyLocation,
+  obstructionRects,
+  onBestNearbyVisibilityChange,
+}: {
+  bestNearbyLocation: { lat: number; lng: number } | null;
+  obstructionRects: Array<{ left: number; top: number; right: number; bottom: number }>;
+  onBestNearbyVisibilityChange: (isObscured: boolean) => void;
+}) {
+  const map = useMap();
+
+  const emitVisibility = useCallback(() => {
+    if (!bestNearbyLocation) {
+      onBestNearbyVisibilityChange(false);
+      return;
+    }
+
+    onBestNearbyVisibilityChange(isMarkerObscured(map, bestNearbyLocation, obstructionRects));
+  }, [bestNearbyLocation, map, obstructionRects, onBestNearbyVisibilityChange]);
+
+  useEffect(() => {
+    emitVisibility();
+  }, [emitVisibility]);
+
+  useMapEvents({
+    moveend() {
+      emitVisibility();
+    },
+    zoomend() {
+      emitVisibility();
+    },
+    resize() {
+      emitVisibility();
+    },
+  });
+
+  return null;
+}
+
 const StationMarkers = memo(function StationMarkers({
   markers,
   onStationSelect,
@@ -270,8 +358,11 @@ export default function Map({
   mapFocusLocation,
   userLocation,
   selectedStationId,
+  bestNearbyLocation,
+  obstructionRects,
   onStationSelect,
   onViewportChange,
+  onBestNearbyVisibilityChange,
 }: MapProps) {
   const mapInstanceKey = useId();
   const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
@@ -425,6 +516,11 @@ export default function Map({
         <ViewportSync onViewportChange={onViewportChange} />
         <ZoomSync onZoomChange={setMapZoom} />
         <FocusLocation mapFocusLocation={mapFocusLocation} />
+        <BestNearbyVisibilitySync
+          bestNearbyLocation={bestNearbyLocation}
+          obstructionRects={obstructionRects}
+          onBestNearbyVisibilityChange={onBestNearbyVisibilityChange}
+        />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"

@@ -1,7 +1,9 @@
 'use server';
 
 import { Prisma } from '@prisma/client';
+import { unstable_cache } from 'next/cache';
 
+import { NATIONAL_PRICE_BENCHMARK_TAG } from '@/lib/cache-tags';
 import { getPriceScale } from '@/lib/price-colors';
 import { prisma } from '@/lib/prisma';
 import { normalizeUkStationCoordinates } from '@/lib/station-coordinates';
@@ -78,12 +80,22 @@ type FuelPriceScale = ReturnType<typeof getPriceScale>;
 
 type FuelType = 'unleaded' | 'diesel';
 
+export type FuelBenchmarkSummary = {
+  averagePrice: number | null;
+  stationCount: number;
+};
+
+export type NationalPriceBenchmark = {
+  fuelSummaries: Record<FuelType, FuelBenchmarkSummary>;
+};
+
 export type PriceBenchmark = {
   anchorLat: number;
   anchorLng: number;
   radiusMiles: number;
   stationCount: number;
   fuelScales: Record<FuelType, FuelPriceScale>;
+  fuelSummaries: Record<FuelType, FuelBenchmarkSummary>;
 };
 
 type BestNearbyFuelStation = {
@@ -107,6 +119,7 @@ export type StationsPageData = {
   isCapped: boolean;
   selectionMode: 'recent' | 'nearest' | 'spread';
   priceBenchmark?: PriceBenchmark | null;
+  nationalPriceBenchmark?: NationalPriceBenchmark | null;
   bestNearby?: BestNearby | null;
 };
 
@@ -368,6 +381,54 @@ function getFuelPrice(station: StationMapRecord, fuelType: FuelType) {
   return station.fallbackPrices.find((price) => price.fuelType === fuelType)?.price;
 }
 
+function buildFuelBenchmarkSummary(
+  stations: StationMapRecord[],
+  fuelType: FuelType,
+): FuelBenchmarkSummary {
+  const prices = stations
+    .map((station) => getFuelPrice(station, fuelType))
+    .filter((price): price is number => typeof price === 'number');
+
+  if (prices.length === 0) {
+    return {
+      averagePrice: null,
+      stationCount: 0,
+    };
+  }
+
+  const totalPrice = prices.reduce((sum, price) => sum + price, 0);
+
+  return {
+    averagePrice: totalPrice / prices.length,
+    stationCount: prices.length,
+  };
+}
+
+async function buildNationalBenchmark(): Promise<NationalPriceBenchmark> {
+  const stationRows = await prisma.station.findMany({
+    select: stationMapSelect,
+  });
+  const stations = stationRows
+    .map(toStationMapRecord)
+    .filter((station): station is StationMapRecord => station !== null);
+
+  return {
+    fuelSummaries: {
+      unleaded: buildFuelBenchmarkSummary(stations, 'unleaded'),
+      diesel: buildFuelBenchmarkSummary(stations, 'diesel'),
+    },
+  };
+}
+
+const getCachedNationalBenchmark = unstable_cache(
+  buildNationalBenchmark,
+  [NATIONAL_PRICE_BENCHMARK_TAG],
+  {
+    tags: [NATIONAL_PRICE_BENCHMARK_TAG],
+    revalidate: 60 * 60 * 24 * 7,
+  },
+);
+
 function getRadiusBounds(centerLat: number, centerLng: number, radiusMiles: number): StationBoundsInput {
   const milesPerLatDegree = 69;
   const latDelta = radiusMiles / milesPerLatDegree;
@@ -489,6 +550,10 @@ async function buildNearbyBenchmark(bounds: StationBoundsInput) {
           nearbyStations.map((station) => getFuelPrice(station, 'diesel')),
         ),
       },
+      fuelSummaries: {
+        unleaded: buildFuelBenchmarkSummary(nearbyStations, 'unleaded'),
+        diesel: buildFuelBenchmarkSummary(nearbyStations, 'diesel'),
+      },
     } satisfies PriceBenchmark,
     bestNearby: {
       unleaded: buildBestNearbyForFuel(nearbyStations, 'unleaded', anchor, bounds),
@@ -600,7 +665,15 @@ async function loadStations(bounds?: StationBoundsInput, options?: StationQueryO
 }
 
 export async function getStations() {
-  return loadStations();
+  const [stationData, nationalPriceBenchmark] = await Promise.all([
+    loadStations(),
+    getCachedNationalBenchmark(),
+  ]);
+
+  return {
+    ...stationData,
+    nationalPriceBenchmark,
+  } satisfies StationsPageData;
 }
 
 export async function getStationsInBounds(bounds: StationBoundsInput, options?: StationQueryOptions) {

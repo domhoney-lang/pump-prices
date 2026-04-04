@@ -161,6 +161,7 @@ GitHub secrets required for Lambda deployment:
 
 - `AWS_ACCESS_KEY_ID`
 - `AWS_SECRET_ACCESS_KEY`
+- `CRON_SECRET`
 - `DATABASE_URL`
 - `DIRECT_URL`
 - `FUEL_FINDER_CLIENT_ID`
@@ -168,6 +169,7 @@ GitHub secrets required for Lambda deployment:
 
 GitHub repository variable required for Lambda deployment:
 
+- `APP_URL`
 - `LAMBDA_FUNCTION_NAME`
 
 The Lambda bundle is built from `src/lambda/sync-fuel-data.ts` using:
@@ -188,6 +190,8 @@ aws lambda invoke \
 
 The deploy workflow also enforces production-oriented Lambda settings:
 
+- `APP_URL` so the worker can notify the Next app to revalidate cached national averages
+- `CRON_SECRET` so the worker can authenticate that revalidation call
 - `NODE_ENV=production`
 - `nodejs20.x` runtime
 - `sync-fuel-data.handler` handler

@@ -7,7 +7,16 @@ Changelog:
 - Unified price colors across the map, drawer, and nearby list, and improved mobile search input focus.
 */
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, List, LocateFixed, Search, X } from 'lucide-react';
@@ -21,6 +30,7 @@ import {
   type BestNearby,
   getStationDetails,
   getStationsInBounds,
+  type NationalPriceBenchmark,
   type PriceBenchmark,
   type StationBoundsInput,
   type StationDetailRecord,
@@ -46,6 +56,7 @@ interface ClientMapProps {
   stationLimit: number;
   initialSelectionMode: 'recent' | 'nearest' | 'spread';
   initialPriceBenchmark?: PriceBenchmark | null;
+  initialNationalPriceBenchmark?: NationalPriceBenchmark | null;
   initialBestNearby?: BestNearby | null;
 }
 
@@ -64,11 +75,34 @@ type ErrorBanner = {
   message: string;
 };
 
+type OverlayRect = {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+};
+
 const FOCUS_REFRESH_COOLDOWN_MS = 60_000;
 const LOCATION_SUGGESTION_DEBOUNCE_MS = 250;
-const BENCHMARK_REUSE_RADIUS_MILES = 0.75;
 const USER_LOCATION_ACTIVE_RADIUS_MILES = 0.25;
 const USER_LOCATION_FOCUS_ZOOM = 13;
+
+function areOverlayRectsEqual(left: OverlayRect[], right: OverlayRect[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  return left.every((rect, index) => {
+    const other = right[index];
+
+    return (
+      rect.left === other.left &&
+      rect.top === other.top &&
+      rect.right === other.right &&
+      rect.bottom === other.bottom
+    );
+  });
+}
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
@@ -153,6 +187,7 @@ export default function ClientMap({
   stationLimit,
   initialSelectionMode,
   initialPriceBenchmark = null,
+  initialNationalPriceBenchmark = null,
   initialBestNearby = null,
 }: ClientMapProps) {
   const router = useRouter();
@@ -188,6 +223,8 @@ export default function ClientMap({
   const [stationSelectionMode, setStationSelectionMode] = useState(initialSelectionMode);
   const [priceBenchmark, setPriceBenchmark] = useState<PriceBenchmark | null>(initialPriceBenchmark);
   const [bestNearby, setBestNearby] = useState<BestNearby | null>(initialBestNearby);
+  const [bestNearbyIsObscured, setBestNearbyIsObscured] = useState(false);
+  const [mapObstructionRects, setMapObstructionRects] = useState<OverlayRect[]>([]);
   const lastBoundsKeyRef = useRef<string | null>(null);
   const lastBoundsRef = useRef<StationBoundsInput | null>(null);
   const viewportRequestIdRef = useRef(0);
@@ -196,12 +233,23 @@ export default function ClientMap({
   const locationSearchInputRef = useRef<HTMLInputElement | null>(null);
   const hasAttemptedAutoLocateRef = useRef(false);
   const lastAutoRefreshAtRef = useRef(0);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const topChromeRef = useRef<HTMLDivElement | null>(null);
+  const nearbyListRef = useRef<HTMLElement | null>(null);
+  const mobilePriceGuideRef = useRef<HTMLDivElement | null>(null);
+  const mobileBottomControlsRef = useRef<HTMLDivElement | null>(null);
+  const desktopNearbyToggleRef = useRef<HTMLDivElement | null>(null);
+  const desktopPriceGuideRef = useRef<HTMLDivElement | null>(null);
 
   const hasStations = stations.length > 0;
   const hasAnyStationData = stationCatalogCount > 0;
   const activeBestNearby = bestNearby?.[fuelType] ?? null;
   const showOffscreenBestNearbyAlert =
-    activeBestNearby !== null && !activeBestNearby.inViewport && !loadingStations;
+    activeBestNearby !== null &&
+    (!activeBestNearby.inViewport || bestNearbyIsObscured) &&
+    !loadingStations;
+  const bestNearbyHiddenByChrome =
+    activeBestNearby !== null && activeBestNearby.inViewport && bestNearbyIsObscured;
   const bestNearbyDirection =
     activeBestNearby && viewportCenter
       ? getCompassDirection(viewportCenter, {
@@ -215,7 +263,9 @@ export default function ClientMap({
     mapFocusLabel === 'Your location' &&
     getDistanceMiles(userLocation, viewportCenter) <= USER_LOCATION_ACTIVE_RADIUS_MILES;
   const distanceReferenceLocation = userLocation ?? mapFocusLocation;
-  const stationSummary = useMemo(() => {
+  const nearbyFuelSummary = priceBenchmark?.fuelSummaries[fuelType] ?? null;
+  const nationalFuelSummary = initialNationalPriceBenchmark?.fuelSummaries[fuelType] ?? null;
+  const stationSummary = useMemo<ReactNode>(() => {
     if (!hasAnyStationData) {
       return 'Station data will appear after the next scheduled sync';
     }
@@ -226,16 +276,58 @@ export default function ClientMap({
         : 'No stations in the current map area';
     }
 
-    if (matchingStationCount > stations.length) {
-      return `Showing ${stations.length} of ${matchingStationCount} stations in this area`;
+    const fuelLabel = fuelType === 'diesel' ? 'diesel' : 'unleaded';
+
+    if (!nearbyFuelSummary || nearbyFuelSummary.averagePrice === null) {
+      return `Local avg ${fuelLabel} is unavailable`;
     }
 
-    if (matchingStationCount === stationCatalogCount) {
-      return `Showing ${stations.length} of ${stationCatalogCount} stations`;
+    const localSummaryText = `Local avg ${fuelLabel} ${nearbyFuelSummary.averagePrice.toFixed(1)}p from ${nearbyFuelSummary.stationCount} stations`;
+
+    if (!nationalFuelSummary || nationalFuelSummary.averagePrice === null) {
+      return localSummaryText;
     }
 
-    return `Showing ${stations.length} of ${matchingStationCount} stations in this area`;
-  }, [hasAnyStationData, mapFocusLocation, matchingStationCount, stationCatalogCount, stations.length]);
+    const nationalDifference = nearbyFuelSummary.averagePrice - nationalFuelSummary.averagePrice;
+
+    if (Math.abs(nationalDifference) < 0.05) {
+      return (
+        <>
+          <span className="block">{localSummaryText}</span>
+          <span className="mt-1 inline-flex rounded-full border border-gray-200 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+            Matches UK average
+          </span>
+        </>
+      );
+    }
+
+    const isAboveNationalAverage = nationalDifference > 0;
+    const comparisonClassName = isAboveNationalAverage
+      ? 'border-rose-200 bg-rose-50 text-rose-700'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+    const comparisonArrow = isAboveNationalAverage ? '↑' : '↓';
+    const comparisonText = `${comparisonArrow} ${Math.abs(nationalDifference).toFixed(1)}p ${
+      isAboveNationalAverage ? 'above' : 'below'
+    } UK average`;
+
+    return (
+      <>
+        <span className="block">{localSummaryText}</span>
+        <span
+          className={`mt-1 inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${comparisonClassName}`}
+        >
+          {comparisonText}
+        </span>
+      </>
+    );
+  }, [
+    fuelType,
+    hasAnyStationData,
+    mapFocusLocation,
+    matchingStationCount,
+    nationalFuelSummary,
+    nearbyFuelSummary,
+  ]);
 
   const cappedStationsMessage = useMemo(() => {
     if (!isStationResultsCapped || loadingStations || matchingStationCount <= stations.length) {
@@ -291,11 +383,117 @@ export default function ClientMap({
       ? 'bottom-24 opacity-100'
       : 'pointer-events-none bottom-20 translate-y-2 opacity-0';
 
+  const updateMapObstructionRects = useCallback(() => {
+    const mapContainer = mapContainerRef.current;
+
+    if (!mapContainer || typeof window === 'undefined') {
+      setMapObstructionRects([]);
+      return;
+    }
+
+    const containerRect = mapContainer.getBoundingClientRect();
+    const nextRects: OverlayRect[] = [];
+
+    const addRect = (element: HTMLElement | null) => {
+      if (!element) {
+        return;
+      }
+
+      const rect = element.getBoundingClientRect();
+
+      if (rect.width < 1 || rect.height < 1) {
+        return;
+      }
+
+      const left = Math.max(0, rect.left - containerRect.left);
+      const top = Math.max(0, rect.top - containerRect.top);
+      const right = Math.min(containerRect.width, rect.right - containerRect.left);
+      const bottom = Math.min(containerRect.height, rect.bottom - containerRect.top);
+
+      if (right <= left || bottom <= top) {
+        return;
+      }
+
+      nextRects.push({ left, top, right, bottom });
+    };
+
+    addRect(topChromeRef.current);
+
+    const isDesktop = window.innerWidth >= 640;
+
+    if (isDesktop) {
+      if (viewportCenter) {
+        addRect(nearbyListRef.current);
+        addRect(desktopNearbyToggleRef.current);
+      }
+
+      if (hasStations) {
+        addRect(desktopPriceGuideRef.current);
+      }
+    } else {
+      if (viewportCenter && isNearbyListOpen) {
+        addRect(nearbyListRef.current);
+      }
+
+      if (hasStations) {
+        addRect(mobilePriceGuideRef.current);
+      }
+
+      addRect(mobileBottomControlsRef.current);
+    }
+
+    setMapObstructionRects((currentRects) =>
+      areOverlayRectsEqual(currentRects, nextRects) ? currentRects : nextRects,
+    );
+  }, [hasStations, isNearbyListOpen, viewportCenter]);
+
+  useLayoutEffect(() => {
+    updateMapObstructionRects();
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const observedElements = [
+      mapContainerRef.current,
+      topChromeRef.current,
+      nearbyListRef.current,
+      mobilePriceGuideRef.current,
+      mobileBottomControlsRef.current,
+      desktopNearbyToggleRef.current,
+      desktopPriceGuideRef.current,
+    ].filter((element): element is HTMLElement => element !== null);
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            updateMapObstructionRects();
+          });
+
+    for (const element of observedElements) {
+      resizeObserver?.observe(element);
+    }
+
+    window.addEventListener('resize', updateMapObstructionRects);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateMapObstructionRects);
+    };
+  }, [updateMapObstructionRects]);
+
   useEffect(() => {
     if (!viewportCenter) {
       setIsNearbyListOpen(false);
     }
   }, [viewportCenter]);
+
+  useEffect(() => {
+    if (!activeBestNearby) {
+      setBestNearbyIsObscured(false);
+    }
+  }, [activeBestNearby]);
 
   useEffect(() => {
     setStations(initialStations);
@@ -664,25 +862,13 @@ export default function ClientMap({
     }
 
     lastBoundsKeyRef.current = boundsKey;
-    const shouldRefreshBenchmark =
-      !priceBenchmark ||
-      getDistanceMiles(
-        {
-          lat: priceBenchmark.anchorLat,
-          lng: priceBenchmark.anchorLng,
-        },
-        {
-          lat: bounds.centerLat,
-          lng: bounds.centerLng,
-        },
-      ) > BENCHMARK_REUSE_RADIUS_MILES;
     const requestId = ++viewportRequestIdRef.current;
     setLoadingStations(true);
     setStationLoadError(null);
 
     try {
       const result = await getStationsInBounds(bounds, {
-        includeNearbyBenchmark: shouldRefreshBenchmark,
+        includeNearbyBenchmark: true,
       });
       if (requestId !== viewportRequestIdRef.current) {
         return;
@@ -711,7 +897,7 @@ export default function ClientMap({
         setLoadingStations(false);
       }
     }
-  }, [priceBenchmark]);
+  }, []);
 
   const handleShowBestNearby = useCallback(() => {
     if (!activeBestNearby) {
@@ -727,174 +913,176 @@ export default function ClientMap({
   }, [activeBestNearby, fuelType]);
 
   return (
-    <div className="relative h-full w-full">
+    <div ref={mapContainerRef} className="relative h-full w-full">
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 px-3 pb-4 pt-3 sm:p-4">
         <div className="mx-auto flex max-w-4xl flex-col gap-3">
-          <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white/80 backdrop-blur-md p-3 shadow-lg sm:p-4">
-            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex w-full items-start justify-between gap-3 lg:w-auto lg:justify-start">
-                <div className="flex items-start gap-3">
-                  <div className="rounded-lg bg-blue-100 p-2">
-                    <Fuel className="h-5 w-5 text-blue-600" />
+          <div ref={topChromeRef} className="flex flex-col gap-3">
+            <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white/80 p-3 shadow-lg backdrop-blur-md sm:p-4">
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                <div className="flex w-full items-start justify-between gap-3 lg:w-auto lg:justify-start">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-lg bg-blue-100 p-2">
+                      <Fuel className="h-5 w-5 text-blue-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <h1 className="font-bold text-gray-900">Pump Prices</h1>
+                      <div className="mt-0.5 text-sm text-gray-500">{stationSummary}</div>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h1 className="font-bold text-gray-900">Pump Prices</h1>
-                    <p className="text-sm text-gray-500">{stationSummary}</p>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsMobileSearchExpanded((prev) => !prev)}
+                    className={`shrink-0 rounded-xl p-2.5 transition-colors sm:hidden ${
+                      isMobileSearchExpanded
+                        ? 'bg-blue-100 text-blue-600'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                    aria-label={isMobileSearchExpanded ? 'Close search' : 'Open search'}
+                    aria-expanded={isMobileSearchExpanded}
+                  >
+                    {isMobileSearchExpanded ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsMobileSearchExpanded((prev) => !prev)}
-                  className={`shrink-0 rounded-xl p-2.5 transition-colors sm:hidden ${
-                    isMobileSearchExpanded
-                      ? 'bg-blue-100 text-blue-600'
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                  }`}
-                  aria-label={isMobileSearchExpanded ? 'Close search' : 'Open search'}
-                  aria-expanded={isMobileSearchExpanded}
-                >
-                  {isMobileSearchExpanded ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
-                </button>
-              </div>
 
-              <div
-                className={`w-full flex-col gap-2 lg:min-w-[26rem] lg:max-w-xl ${
-                  isMobileSearchExpanded ? 'flex' : 'hidden sm:flex'
-                }`}
-              >
-                <div className="relative">
-                  <div className="flex w-full flex-col gap-2">
-                    <div className="hidden w-full items-center gap-2 rounded-xl bg-gray-100 p-1 sm:flex">
-                      <span className="pl-2 pr-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                        Fuel
-                      </span>
-                      <button
-                        onClick={() => setFuelType('unleaded')}
-                        className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
-                          fuelType === 'unleaded'
-                            ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
-                            : 'border-transparent text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        Unleaded
-                      </button>
-                      <button
-                        onClick={() => setFuelType('diesel')}
-                        className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
-                          fuelType === 'diesel'
-                            ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
-                            : 'border-transparent text-gray-500 hover:text-gray-700'
-                        }`}
-                      >
-                        Diesel
-                      </button>
+                <div
+                  className={`w-full flex-col gap-2 lg:min-w-[26rem] lg:max-w-xl ${
+                    isMobileSearchExpanded ? 'flex' : 'hidden sm:flex'
+                  }`}
+                >
+                  <div className="relative">
+                    <div className="flex w-full flex-col gap-2">
+                      <div className="hidden w-full items-center gap-2 rounded-xl bg-gray-100 p-1 sm:flex">
+                        <span className="pl-2 pr-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                          Fuel
+                        </span>
+                        <button
+                          onClick={() => setFuelType('unleaded')}
+                          className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+                            fuelType === 'unleaded'
+                              ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
+                              : 'border-transparent text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          Unleaded
+                        </button>
+                        <button
+                          onClick={() => setFuelType('diesel')}
+                          className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+                            fuelType === 'diesel'
+                              ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
+                              : 'border-transparent text-gray-500 hover:text-gray-700'
+                          }`}
+                        >
+                          Diesel
+                        </button>
+                      </div>
+
+                      <form className="flex items-center gap-2" onSubmit={handleLocationSearch}>
+                        <button
+                          type="button"
+                          onClick={handleLocateUser}
+                          disabled={isLocating}
+                          className={`hidden shrink-0 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:inline-flex ${
+                            isFocusedOnUserLocation || isLocating
+                              ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                              : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                          }`}
+                          title="Use my location"
+                        >
+                          <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
+                          <span>{isLocating ? 'Locating...' : 'My location'}</span>
+                        </button>
+
+                        <label className="sr-only" htmlFor="location-search">
+                          Search for an address, postcode, or area
+                        </label>
+                        <input
+                          ref={locationSearchInputRef}
+                          id="location-search"
+                          type="search"
+                          value={searchQuery}
+                          onChange={(event) => setSearchQuery(event.target.value)}
+                          onFocus={() => {
+                            if (blurHideSuggestionsTimeoutRef.current !== null) {
+                              window.clearTimeout(blurHideSuggestionsTimeoutRef.current);
+                              blurHideSuggestionsTimeoutRef.current = null;
+                            }
+                            setShowLocationSuggestions(true);
+                          }}
+                          onBlur={() => {
+                            blurHideSuggestionsTimeoutRef.current = window.setTimeout(() => {
+                              setShowLocationSuggestions(false);
+                            }, 120);
+                          }}
+                          placeholder="Search location"
+                          autoComplete="street-address"
+                          autoCapitalize="words"
+                          spellCheck={false}
+                          enterKeyHint="search"
+                          className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                        />
+                        <button
+                          type="submit"
+                          disabled={isSearching}
+                          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <Search className={`h-4 w-4 ${isSearching ? 'animate-pulse' : ''}`} />
+                          <span>{isSearching ? 'Searching...' : 'Search'}</span>
+                        </button>
+                      </form>
                     </div>
 
-                    <form className="flex items-center gap-2" onSubmit={handleLocationSearch}>
-                      <button
-                        type="button"
-                        onClick={handleLocateUser}
-                        disabled={isLocating}
-                        className={`hidden shrink-0 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:inline-flex ${
-                          isFocusedOnUserLocation || isLocating
-                            ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
-                            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
-                        }`}
-                        title="Use my location"
-                      >
-                        <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
-                        <span>{isLocating ? 'Locating...' : 'My location'}</span>
-                      </button>
-
-                      <label className="sr-only" htmlFor="location-search">
-                        Search for an address, postcode, or area
-                      </label>
-                      <input
-                        ref={locationSearchInputRef}
-                        id="location-search"
-                        type="search"
-                        value={searchQuery}
-                        onChange={(event) => setSearchQuery(event.target.value)}
-                        onFocus={() => {
-                          if (blurHideSuggestionsTimeoutRef.current !== null) {
-                            window.clearTimeout(blurHideSuggestionsTimeoutRef.current);
-                            blurHideSuggestionsTimeoutRef.current = null;
-                          }
-                          setShowLocationSuggestions(true);
-                        }}
-                        onBlur={() => {
-                          blurHideSuggestionsTimeoutRef.current = window.setTimeout(() => {
-                            setShowLocationSuggestions(false);
-                          }, 120);
-                        }}
-                        placeholder="Search location"
-                        autoComplete="street-address"
-                        autoCapitalize="words"
-                        spellCheck={false}
-                        enterKeyHint="search"
-                        className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isSearching}
-                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        <Search className={`h-4 w-4 ${isSearching ? 'animate-pulse' : ''}`} />
-                        <span>{isSearching ? 'Searching...' : 'Search'}</span>
-                      </button>
-                    </form>
+                    {showLocationSuggestions && searchQuery.trim().length >= 2 && (
+                      <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-gray-200 bg-white/80 shadow-xl backdrop-blur-md">
+                        {isLoadingSuggestions ? (
+                          <div className="px-4 py-3 text-sm text-gray-500">Searching places...</div>
+                        ) : locationSuggestions.length > 0 ? (
+                          <div className="max-h-72 overflow-y-auto py-1">
+                            {locationSuggestions.map((suggestion) => (
+                              <button
+                                key={`${suggestion.lat}:${suggestion.lng}:${suggestion.label}`}
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => handleLocationSuggestionSelect(suggestion)}
+                                className="block w-full px-4 py-3 text-left text-sm text-gray-700 transition-colors hover:bg-blue-50 hover:text-gray-900"
+                              >
+                                <span className="line-clamp-2">{suggestion.label}</span>
+                              </button>
+                            ))}
+                          </div>
+                        ) : locationSuggestionMessage ? (
+                          <div className="px-4 py-3 text-sm text-gray-500">
+                            {locationSuggestionMessage}
+                          </div>
+                        ) : null}
+                      </div>
+                    )}
                   </div>
 
-                  {showLocationSuggestions && searchQuery.trim().length >= 2 && (
-                    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-md shadow-xl">
-                      {isLoadingSuggestions ? (
-                        <div className="px-4 py-3 text-sm text-gray-500">Searching places...</div>
-                      ) : locationSuggestions.length > 0 ? (
-                        <div className="max-h-72 overflow-y-auto py-1">
-                          {locationSuggestions.map((suggestion) => (
-                            <button
-                              key={`${suggestion.lat}:${suggestion.lng}:${suggestion.label}`}
-                              type="button"
-                              onMouseDown={(event) => event.preventDefault()}
-                              onClick={() => handleLocationSuggestionSelect(suggestion)}
-                              className="block w-full px-4 py-3 text-left text-sm text-gray-700 transition-colors hover:bg-blue-50 hover:text-gray-900"
-                            >
-                              <span className="line-clamp-2">{suggestion.label}</span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : locationSuggestionMessage ? (
-                        <div className="px-4 py-3 text-sm text-gray-500">
-                          {locationSuggestionMessage}
-                        </div>
-                      ) : null}
-                    </div>
+                  {mapFocusLabel && (
+                    <p className="truncate text-xs text-gray-500">
+                      Focused on <span className="font-medium text-gray-700">{mapFocusLabel}</span>
+                    </p>
                   )}
                 </div>
-
-                {mapFocusLabel && (
-                  <p className="truncate text-xs text-gray-500">
-                    Focused on <span className="font-medium text-gray-700">{mapFocusLabel}</span>
-                  </p>
-                )}
               </div>
             </div>
+
+            {errorBanners.map((banner) => (
+              <div
+                key={banner.id}
+                className="pointer-events-auto rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700 shadow-lg backdrop-blur-md"
+              >
+                <span className="font-semibold text-red-800">{banner.title}:</span> {banner.message}
+              </div>
+            ))}
+
+            {cappedStationsMessage && (
+              <div className="pointer-events-auto rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-800 shadow-lg backdrop-blur-md">
+                {cappedStationsMessage}
+              </div>
+            )}
           </div>
-
-          {errorBanners.map((banner) => (
-            <div
-              key={banner.id}
-              className="pointer-events-auto rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700 shadow-lg backdrop-blur-md"
-            >
-              <span className="font-semibold text-red-800">{banner.title}:</span> {banner.message}
-            </div>
-          ))}
-
-          {cappedStationsMessage && (
-            <div className="pointer-events-auto rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-800 shadow-lg backdrop-blur-md">
-              {cappedStationsMessage}
-            </div>
-          )}
 
           {showOffscreenBestNearbyAlert && activeBestNearby && (
             <div className="pointer-events-auto rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md">
@@ -907,7 +1095,9 @@ export default function ClientMap({
                   {activeBestNearby.distanceMiles < 10
                     ? `${activeBestNearby.distanceMiles.toFixed(1)} mi away`
                     : `${Math.round(activeBestNearby.distanceMiles)} mi away`}
-                  {bestNearbyDirection ? (
+                  {bestNearbyHiddenByChrome ? (
+                    ', but it is tucked behind the map controls.'
+                  ) : bestNearbyDirection ? (
                     <>
                       , <span className="font-semibold">{getDirectionArrow(bestNearbyDirection)}</span>{' '}
                       just {bestNearbyDirection} of this view.
@@ -936,8 +1126,18 @@ export default function ClientMap({
         mapFocusLocation={mapFocusLocation}
         userLocation={userLocation}
         selectedStationId={activeStationId}
+        bestNearbyLocation={
+          activeBestNearby
+            ? {
+                lat: activeBestNearby.lat,
+                lng: activeBestNearby.lng,
+              }
+            : null
+        }
+        obstructionRects={mapObstructionRects}
         onStationSelect={handleStationSelect}
         onViewportChange={handleViewportChange}
+        onBestNearbyVisibilityChange={setBestNearbyIsObscured}
       />
 
       <NearbyStationsList
@@ -948,13 +1148,14 @@ export default function ClientMap({
         loading={loadingStations}
         selectedStationId={activeStationId}
         onStationSelect={handleStationSelect}
+        containerRef={nearbyListRef}
         className={`absolute left-3 right-3 z-20 max-h-[36dvh] overflow-hidden transition-all duration-200 ${mobileNearbyListPosition} sm:left-6 sm:right-auto sm:w-full sm:max-w-sm sm:max-h-none sm:translate-y-0 ${
           isNearbyListOpen ? 'sm:bottom-6' : 'sm:bottom-2'
         }`}
       />
 
       {hasStations && (
-        <div className="pointer-events-none absolute bottom-24 left-3 right-3 z-20 sm:hidden">
+        <div ref={mobilePriceGuideRef} className="pointer-events-none absolute bottom-24 left-3 right-3 z-20 sm:hidden">
           <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md">
             <div className="flex items-center justify-between gap-3">
               <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
@@ -980,7 +1181,10 @@ export default function ClientMap({
       )}
 
       {/* Mobile Bottom Controls */}
-      <div className="pointer-events-none absolute bottom-6 left-3 right-3 z-20 flex gap-3 sm:hidden">
+      <div
+        ref={mobileBottomControlsRef}
+        className="pointer-events-none absolute bottom-6 left-3 right-3 z-20 flex gap-3 sm:hidden"
+      >
         <div className="pointer-events-auto flex flex-1 items-center gap-1 rounded-2xl border border-gray-100 bg-white/80 p-1.5 shadow-lg backdrop-blur-md">
           <button
             onClick={() => setFuelType('unleaded')}
@@ -1042,7 +1246,10 @@ export default function ClientMap({
       </div>
 
       {viewportCenter && (
-        <div className="pointer-events-none absolute bottom-6 left-6 z-20 hidden sm:block">
+        <div
+          ref={desktopNearbyToggleRef}
+          className="pointer-events-none absolute bottom-6 left-6 z-20 hidden sm:block"
+        >
           <button
             type="button"
             onClick={() => setIsNearbyListOpen((prev) => !prev)}
@@ -1060,7 +1267,10 @@ export default function ClientMap({
       )}
 
       {hasStations && (
-        <div className="pointer-events-auto absolute bottom-24 left-3 right-3 z-20 hidden sm:block sm:bottom-6 sm:left-auto sm:right-6">
+        <div
+          ref={desktopPriceGuideRef}
+          className="pointer-events-auto absolute bottom-24 left-3 right-3 z-20 hidden sm:block sm:bottom-6 sm:left-auto sm:right-6"
+        >
           <div className="mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md sm:mx-0 sm:w-auto sm:max-w-none">
             <h3 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-gray-500">
               Price Guide

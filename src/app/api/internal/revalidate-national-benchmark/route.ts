@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 
 import { NATIONAL_PRICE_BENCHMARK_TAG } from "@/lib/cache-tags";
-import { syncFuelDataInternal } from "@/lib/sync-fuel-data";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +35,7 @@ function isAuthorized(request: NextRequest) {
   return { ok: true } as const;
 }
 
-async function runSync(request: NextRequest) {
+export async function POST(request: NextRequest) {
   const authorization = isAuthorized(request);
 
   if (!authorization.ok) {
@@ -49,19 +48,7 @@ async function runSync(request: NextRequest) {
     );
   }
 
-  const result = await syncFuelDataInternal();
+  revalidateTag(NATIONAL_PRICE_BENCHMARK_TAG, "max");
 
-  if (result.success) {
-    revalidateTag(NATIONAL_PRICE_BENCHMARK_TAG, "max");
-  }
-
-  return NextResponse.json(result, { status: result.success ? 200 : 500 });
-}
-
-export async function GET(request: NextRequest) {
-  return runSync(request);
-}
-
-export async function POST(request: NextRequest) {
-  return runSync(request);
+  return NextResponse.json({ success: true });
 }
