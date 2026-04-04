@@ -253,6 +253,21 @@ async function bulkUpsertCurrentPrices(rows: PriceInsertCandidate[]) {
   }
 }
 
+async function resetUnleadedPriceDataForBackfill() {
+  await prisma.$transaction([
+    prisma.currentPrice.deleteMany({
+      where: {
+        fuelType: "unleaded",
+      },
+    }),
+    prisma.priceHistory.deleteMany({
+      where: {
+        fuelType: "unleaded",
+      },
+    }),
+  ]);
+}
+
 async function insertChangedPrices(batch: FuelFinderPriceStation[], knownStationIds: Set<string>) {
   const incomingRows = normalizePriceBatch(batch).filter((row) => knownStationIds.has(row.stationId));
 
@@ -328,6 +343,10 @@ export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): P
     const knownStationIds = await getKnownStationIds();
     const incrementalStartTimestamp =
       mode === "full-price-backfill" ? undefined : await getIncrementalStartTimestamp();
+
+    if (mode === "full-price-backfill") {
+      await resetUnleadedPriceDataForBackfill();
+    }
 
     for await (const forecourtBatch of fuelFinderClient.iterateForecourts(incrementalStartTimestamp)) {
       stationBatchCount += 1;

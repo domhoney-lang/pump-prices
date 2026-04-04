@@ -73,12 +73,23 @@ function getRequiredFuelFinderEnv(name: "FUEL_FINDER_CLIENT_ID" | "FUEL_FINDER_C
 export function normalizeFuelType(value: string): SupportedFuelType | null {
   const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 
+  const isPremiumUnleaded =
+    ["e5", "premiumunleaded", "premiumpetrol", "superunleaded", "superpetrol"].includes(
+      normalized,
+    ) ||
+    normalized.startsWith("e5") ||
+    ((normalized.includes("premium") || normalized.includes("super")) &&
+      (normalized.includes("unleaded") || normalized.includes("petrol")));
+
+  if (isPremiumUnleaded) {
+    return null;
+  }
+
   if (
-    ["unleaded", "petrol", "e10", "e5", "premiumunleaded"].includes(normalized) ||
+    ["unleaded", "petrol", "e10"].includes(normalized) ||
     normalized.includes("unleaded") ||
     normalized.includes("petrol") ||
-    normalized.startsWith("e10") ||
-    normalized.startsWith("e5")
+    normalized.startsWith("e10")
   ) {
     return "unleaded";
   }
