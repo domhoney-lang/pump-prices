@@ -64,6 +64,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
   const [selectedStation, setSelectedStation] = useState<StationDetailRecord | null>(null);
   const [stations, setStations] = useState(initialStations);
+  const [stationCatalogCount, setStationCatalogCount] = useState(totalStationCount);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [loadingStation, setLoadingStation] = useState(false);
   const [loadingStations, setLoadingStations] = useState(false);
@@ -88,17 +89,28 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const lastAutoRefreshAtRef = useRef(0);
 
   const hasStations = stations.length > 0;
+  const hasAnyStationData = stationCatalogCount > 0;
   const stationSummary = useMemo(() => {
-    if (!hasStations) {
+    if (!hasAnyStationData) {
       return 'Run the first sync to load stations onto the map';
     }
 
-    if (matchingStationCount === totalStationCount) {
-      return `Showing ${stations.length} of ${totalStationCount} stations`;
+    if (matchingStationCount === 0) {
+      return 'No stations in the current map area';
+    }
+
+    if (matchingStationCount === stationCatalogCount) {
+      return `Showing ${stations.length} of ${stationCatalogCount} stations`;
     }
 
     return `Showing ${stations.length} of ${matchingStationCount} stations in this area`;
-  }, [hasStations, matchingStationCount, stations.length, totalStationCount]);
+  }, [hasAnyStationData, matchingStationCount, stationCatalogCount, stations.length]);
+
+  useEffect(() => {
+    setStations(initialStations);
+    setMatchingStationCount(totalStationCount);
+    setStationCatalogCount(totalStationCount);
+  }, [initialStations, totalStationCount]);
 
   const handleSync = async () => {
     setIsSyncing(true);
@@ -385,6 +397,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       }
 
       setStations(result.stations);
+      setStationCatalogCount(result.totalStationCount);
       setMatchingStationCount(result.matchingStationCount);
     } catch (error) {
       if (requestId !== viewportRequestIdRef.current) {
@@ -583,7 +596,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         </div>
       )}
 
-      {!hasStations && !isSyncing && (
+      {!hasAnyStationData && !isSyncing && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
           <div className="pointer-events-auto w-full max-w-md rounded-3xl border border-gray-100 bg-white/90 p-8 text-center shadow-2xl backdrop-blur-md">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
