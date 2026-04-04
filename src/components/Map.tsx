@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
 import { CircleMarker, MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -26,6 +26,14 @@ interface MapProps {
   onStationSelect: (stationId: string) => void;
   onViewportChange: (bounds: StationBoundsInput) => void;
 }
+
+type StationMarkerEntry = {
+  station: StationMapRecord;
+  icon: L.DivIcon;
+};
+
+const DEFAULT_CENTER: [number, number] = [54.5, -3.0];
+const DEFAULT_ZOOM = 6;
 
 function emitBounds(map: L.Map, onViewportChange: (bounds: StationBoundsInput) => void) {
   const bounds = map.getBounds();
@@ -103,6 +111,31 @@ function FocusLocation({
   return null;
 }
 
+const StationMarkers = memo(function StationMarkers({
+  markers,
+  onStationSelect,
+}: {
+  markers: StationMarkerEntry[];
+  onStationSelect: (stationId: string) => void;
+}) {
+  return (
+    <>
+      {markers.map(({ station, icon }) => {
+        return (
+          <Marker
+            key={station.id}
+            position={[station.lat, station.lng]}
+            icon={icon}
+            eventHandlers={{
+              click: () => onStationSelect(station.id),
+            }}
+          />
+        );
+      })}
+    </>
+  );
+});
+
 export default function Map({
   stations,
   fuelType,
@@ -110,38 +143,49 @@ export default function Map({
   onStationSelect,
   onViewportChange,
 }: MapProps) {
-  // Center roughly on the UK
-  const defaultCenter: [number, number] = [54.5, -3.0];
-  const defaultZoom = 6;
+  const normalizedFuelType = fuelType.toLowerCase();
 
-  // Calculate price percentiles for color coding
-  const validPrices = stations
-    .map((station) => {
-      const latestCurrent = station.currentPrices.find(
-        (p) => p.fuelType.toLowerCase() === fuelType.toLowerCase()
+  const stationPrices = useMemo(() => {
+    return stations.map((station) => {
+      const latestCurrentPrice = station.currentPrices.find(
+        (price) => price.fuelType.toLowerCase() === normalizedFuelType,
       )?.price;
-      const fallback = station.prices.find(
-        (p) => p.fuelType.toLowerCase() === fuelType.toLowerCase()
+      const fallbackPrice = station.prices.find(
+        (price) => price.fuelType.toLowerCase() === normalizedFuelType,
       )?.price;
-      return latestCurrent ?? fallback;
-    })
-    .filter((p): p is number => p !== undefined)
-    .sort((a, b) => a - b);
 
-  let cheapThreshold = 0;
-  let expensiveThreshold = Infinity;
-  let absoluteCheapestPrice: number | null = null;
+      return {
+        station,
+        latestPrice: latestCurrentPrice ?? fallbackPrice,
+      };
+    });
+  }, [normalizedFuelType, stations]);
 
-  if (validPrices.length > 0) {
-    absoluteCheapestPrice = validPrices[0];
-    const cheapIndex = Math.floor(validPrices.length * 0.2); // Bottom 20%
-    const expensiveIndex = Math.floor(validPrices.length * 0.8); // Top 20%
-    
-    cheapThreshold = validPrices[cheapIndex] || validPrices[0];
-    expensiveThreshold = validPrices[expensiveIndex] || validPrices[validPrices.length - 1];
-  }
+  const { cheapThreshold, expensiveThreshold, absoluteCheapestPrice } = useMemo(() => {
+    const validPrices = stationPrices
+      .map((entry) => entry.latestPrice)
+      .filter((price): price is number => price !== undefined)
+      .sort((a, b) => a - b);
 
-  const getPriceColorClasses = (price: number | undefined) => {
+    if (validPrices.length === 0) {
+      return {
+        cheapThreshold: 0,
+        expensiveThreshold: Infinity,
+        absoluteCheapestPrice: null as number | null,
+      };
+    }
+
+    const cheapIndex = Math.floor(validPrices.length * 0.2);
+    const expensiveIndex = Math.floor(validPrices.length * 0.8);
+
+    return {
+      cheapThreshold: validPrices[cheapIndex] || validPrices[0],
+      expensiveThreshold: validPrices[expensiveIndex] || validPrices[validPrices.length - 1],
+      absoluteCheapestPrice: validPrices[0],
+    };
+  }, [stationPrices]);
+
+  const getPriceColorClasses = useCallback((price: number | undefined) => {
     if (!price) return { bg: 'bg-gray-500', hoverBg: 'group-hover:bg-gray-600', border: 'border-t-gray-500', hoverBorder: 'group-hover:border-t-gray-600', ring: 'bg-gray-500/30' };
     
     if (price <= cheapThreshold) {
@@ -153,9 +197,9 @@ export default function Map({
     }
     // Blue/Yellow/Neutral for the middle 60%
     return { bg: 'bg-amber-500', hoverBg: 'group-hover:bg-amber-600', border: 'border-t-amber-500', hoverBorder: 'group-hover:border-t-amber-600', ring: 'bg-amber-500/30' };
-  };
+  }, [cheapThreshold, expensiveThreshold]);
 
-  const createCustomIcon = (price: number | undefined, isCheapest: boolean) => {
+  const createCustomIcon = useCallback((price: number | undefined, isCheapest: boolean) => {
     const priceText = price ? `${price.toFixed(1)}p` : 'N/A';
     const width = Math.max(48, priceText.length * 10 + 20);
     const height = 30;
@@ -175,13 +219,23 @@ export default function Map({
       iconSize: [width, height],
       iconAnchor: [Math.round(width / 2), height + 6],
     });
-  };
+  }, [getPriceColorClasses]);
+
+  const stationMarkers = useMemo(() => {
+    return stationPrices.map(({ station, latestPrice }) => ({
+      station,
+      icon: createCustomIcon(
+        latestPrice,
+        latestPrice !== undefined && latestPrice === absoluteCheapestPrice,
+      ),
+    }));
+  }, [absoluteCheapestPrice, createCustomIcon, stationPrices]);
 
   return (
     <div className="absolute inset-0 z-0">
       <MapContainer
-        center={defaultCenter}
-        zoom={defaultZoom}
+        center={DEFAULT_CENTER}
+        zoom={DEFAULT_ZOOM}
         className="w-full h-full"
         zoomControl={false}
       >
@@ -203,27 +257,7 @@ export default function Map({
             }}
           />
         )}
-        {stations.map((station) => {
-          const latestCurrentPrice = station.currentPrices.find(
-            (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
-          )?.price;
-          const fallbackPrice = station.prices.find(
-            (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
-          )?.price;
-          const latestPrice = latestCurrentPrice ?? fallbackPrice;
-          const isCheapest = latestPrice !== undefined && latestPrice === absoluteCheapestPrice;
-
-          return (
-            <Marker
-              key={station.id}
-              position={[station.lat, station.lng]}
-              icon={createCustomIcon(latestPrice, isCheapest)}
-              eventHandlers={{
-                click: () => onStationSelect(station.id),
-              }}
-            />
-          );
-        })}
+        <StationMarkers markers={stationMarkers} onStationSelect={onStationSelect} />
       </MapContainer>
     </div>
   );

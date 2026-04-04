@@ -82,6 +82,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [syncError, setSyncError] = useState<string | null>(null);
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
   const lastBoundsKeyRef = useRef<string | null>(null);
+  const lastBoundsRef = useRef<StationBoundsInput | null>(null);
   const viewportRequestIdRef = useRef(0);
   const suggestionRequestIdRef = useRef(0);
   const blurHideSuggestionsTimeoutRef = useRef<number | null>(null);
@@ -134,7 +135,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     }
   };
 
-  const handleStationSelect = async (stationId: string) => {
+  const handleStationSelect = useCallback(async (stationId: string) => {
     setLoadingStation(true);
 
     try {
@@ -147,7 +148,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     } finally {
       setLoadingStation(false);
     }
-  };
+  }, []);
 
   const requestUserLocation = useCallback((options?: { silent?: boolean }) => {
     if (!navigator.geolocation) {
@@ -361,7 +362,40 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       }
 
       lastAutoRefreshAtRef.current = now;
-      router.refresh();
+
+      const bounds = lastBoundsRef.current;
+      if (!bounds) {
+        router.refresh();
+        return;
+      }
+
+      const requestId = ++viewportRequestIdRef.current;
+      setLoadingStations(true);
+      setSyncError(null);
+
+      void getStationsInBounds(bounds)
+        .then((result) => {
+          if (requestId !== viewportRequestIdRef.current) {
+            return;
+          }
+
+          setStations(result.stations);
+          setStationCatalogCount(result.totalStationCount);
+          setMatchingStationCount(result.matchingStationCount);
+        })
+        .catch((error) => {
+          if (requestId !== viewportRequestIdRef.current) {
+            return;
+          }
+
+          console.error('Failed to refresh visible stations', error);
+          setSyncError('Could not refresh stations after returning to the app.');
+        })
+        .finally(() => {
+          if (requestId === viewportRequestIdRef.current) {
+            setLoadingStations(false);
+          }
+        });
     };
 
     window.addEventListener('focus', maybeRefreshOnFocus);
@@ -380,6 +414,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       bounds.north.toFixed(4),
       bounds.east.toFixed(4),
     ].join(':');
+    lastBoundsRef.current = bounds;
 
     if (lastBoundsKeyRef.current === boundsKey) {
       return;
