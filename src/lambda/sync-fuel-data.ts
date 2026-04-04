@@ -30,7 +30,7 @@ export async function handler(event?: LambdaSyncEvent) {
       throw new Error(result.error);
     }
 
-    console.log(result.message);
+    console.info(result.message);
     return result;
   } finally {
     await prisma.$disconnect();

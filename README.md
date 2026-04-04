@@ -1,7 +1,7 @@
 Changelog:
-- Interactive UK fuel-price map with colour-coded markers for unleaded and diesel.
-- Location search, geolocation focus, and station detail drawer for nearby stations.
-- Protected `/api/sync` endpoint, GitHub Actions scheduling, and Lambda backfill support.
+- Removed the public manual sync path so imports stay on protected scheduled and worker flows.
+- Added drawer freshness labels for unleaded and diesel using the latest recorded timestamp.
+- Added structured sync logging plus production cleanup for search and deployment readiness.
 
 ## Local Development
 
@@ -116,13 +116,17 @@ Set these values before syncing live data:
 
 - `DATABASE_URL`
 - `DIRECT_URL`
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY`
 - `FUEL_FINDER_CLIENT_ID`
 - `FUEL_FINDER_CLIENT_SECRET`
 - `CRON_SECRET` for the scheduled sync endpoint
 
-For local development, `DATABASE_URL` and `DIRECT_URL` can point to the local Prisma dev database instead of Supabase.
+For local development, `DATABASE_URL` and `DIRECT_URL` can point to the local Prisma dev database instead of a hosted Postgres instance.
+
+Optional only if you wire Supabase features back into the app:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
 
 ## Syncing Fuel Data
 
@@ -210,11 +214,14 @@ Set these Vercel environment variables before the first production build:
 
 - `DATABASE_URL`
 - `DIRECT_URL`
-- `NEXT_PUBLIC_SUPABASE_URL`
-- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-- `SUPABASE_SERVICE_ROLE_KEY` if you plan to use admin Supabase access
 - `FUEL_FINDER_CLIENT_ID`
 - `FUEL_FINDER_CLIENT_SECRET`
 - `CRON_SECRET`
 
-The included `vercel.json` schedules `/api/sync` every 30 minutes. The route accepts both `GET` and `POST`, and `CRON_SECRET` is used to authorize those requests.
+Optional only if you later enable Supabase-backed features:
+
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+The included `vercel.json` schedules `/api/sync` every 30 minutes. The route accepts both `GET` and `POST`, and `CRON_SECRET` is used to authorize those requests. Keep in mind the sync route still does real work, so confirm your Vercel function duration limits are high enough for your dataset or keep scheduled syncs on GitHub Actions or Lambda.

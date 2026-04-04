@@ -221,7 +221,6 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
     setIsSearching(true);
     setSyncError(null);
-    setSyncMessage(null);
 
     try {
       const result = await searchLocation(trimmedQuery);
@@ -295,6 +294,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
     const trimmedQuery = searchQuery.trim();
 
     if (trimmedQuery.length < 2) {
@@ -307,12 +307,16 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
     const requestId = ++suggestionRequestIdRef.current;
     const timeoutId = window.setTimeout(async () => {
+      if (cancelled) {
+        return;
+      }
+
       setIsLoadingSuggestions(true);
 
       try {
         const result = await searchLocations(trimmedQuery);
 
-        if (requestId !== suggestionRequestIdRef.current) {
+        if (cancelled || requestId !== suggestionRequestIdRef.current) {
           return;
         }
 
@@ -328,7 +332,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
           suggestions.length === 0 ? 'No matching address, postcode, or area found.' : null,
         );
       } catch (error) {
-        if (requestId !== suggestionRequestIdRef.current) {
+        if (cancelled || requestId !== suggestionRequestIdRef.current) {
           return;
         }
 
@@ -336,13 +340,14 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         setLocationSuggestions([]);
         setLocationSuggestionMessage('Location suggestions are unavailable right now.');
       } finally {
-        if (requestId === suggestionRequestIdRef.current) {
+        if (!cancelled && requestId === suggestionRequestIdRef.current) {
           setIsLoadingSuggestions(false);
         }
       }
     }, LOCATION_SUGGESTION_DEBOUNCE_MS);
 
     return () => {
+      cancelled = true;
       window.clearTimeout(timeoutId);
     };
   }, [searchQuery]);

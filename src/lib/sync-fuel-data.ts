@@ -70,7 +70,7 @@ type SyncLogPayload = {
 };
 
 function logSyncResult(payload: SyncLogPayload) {
-  console.log('[fuel-sync]', JSON.stringify(payload));
+  console.info('[fuel-sync]', JSON.stringify(payload));
 }
 
 function chunkArray<T>(items: T[], chunkSize: number) {
