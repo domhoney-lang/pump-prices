@@ -81,12 +81,13 @@ export function normalizeFuelType(value: string): SupportedFuelType | null {
     "superunleaded",
     "superpetrol",
   ]);
-  const regularDieselLabels = new Set(["diesel", "b7"]);
+  const regularDieselLabels = new Set(["diesel", "b7", "b7standard"]);
   const premiumDieselLabels = new Set([
     "premiumdiesel",
     "superdiesel",
     "premiumb7",
     "superb7",
+    "b7premium",
     "b10",
   ]);
 
@@ -109,13 +110,13 @@ export function normalizeFuelType(value: string): SupportedFuelType | null {
     normalized.startsWith("b10") ||
     normalized.includes("hvo") ||
     ((normalized.includes("premium") || normalized.includes("super")) &&
-      normalized.includes("diesel"));
+      (normalized.includes("diesel") || normalized.includes("b7")));
 
   if (isPremiumDiesel) {
     return null;
   }
 
-  if (regularDieselLabels.has(normalized) || normalized.startsWith("b7")) {
+  if (regularDieselLabels.has(normalized)) {
     return "diesel";
   }
 
