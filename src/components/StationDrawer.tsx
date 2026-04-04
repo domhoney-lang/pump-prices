@@ -2,7 +2,7 @@
 
 import { Drawer } from 'vaul';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { format, subDays } from 'date-fns';
+import { format, formatDistanceToNow, subDays } from 'date-fns';
 
 import type { StationDetailRecord } from '@/app/actions/stations';
 
@@ -11,6 +11,29 @@ interface StationDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   fuelType: 'unleaded' | 'diesel';
+}
+
+function getFreshnessTone(updatedAt: Date) {
+  const ageHours = (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60);
+
+  if (ageHours < 24) {
+    return {
+      badgeClassName: 'bg-emerald-100 text-emerald-700',
+      label: 'Fresh',
+    };
+  }
+
+  if (ageHours < 48) {
+    return {
+      badgeClassName: 'bg-amber-100 text-amber-700',
+      label: 'Still good',
+    };
+  }
+
+  return {
+    badgeClassName: 'bg-rose-100 text-rose-700',
+    label: 'Stale',
+  };
 }
 
 export default function StationDrawer({ station, isOpen, onClose, fuelType }: StationDrawerProps) {
@@ -30,9 +53,21 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
 
   const latestCurrentPrice = station.currentPrices.find(
     (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
-  )?.price;
+  );
   const latestHistoricalPrice = relevantPrices.at(-1)?.price ?? null;
-  const latestPrice = latestCurrentPrice ?? latestHistoricalPrice;
+  const latestPrice = latestCurrentPrice?.price ?? latestHistoricalPrice;
+  const freshnessTimestamp = latestCurrentPrice?.timestamp
+    ? new Date(latestCurrentPrice.timestamp)
+    : relevantPrices.at(-1)?.timestamp
+      ? new Date(relevantPrices.at(-1)!.timestamp)
+      : null;
+  const freshnessTone = freshnessTimestamp ? getFreshnessTone(freshnessTimestamp) : null;
+  const freshnessLabel = freshnessTimestamp
+    ? `${formatDistanceToNow(freshnessTimestamp, { addSuffix: true })}`
+    : null;
+  const freshnessTitle = freshnessTimestamp
+    ? `Price reported ${format(freshnessTimestamp, 'PPpp')}`
+    : undefined;
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -64,6 +99,19 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
                   <p className="text-4xl font-extrabold text-blue-700 tracking-tight">
                     {latestPrice ? `${latestPrice.toFixed(1)}p` : 'N/A'}
                   </p>
+                  {freshnessLabel ? (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${freshnessTone?.badgeClassName}`}
+                        title={freshnessTitle}
+                      >
+                        {freshnessTone?.label}
+                      </span>
+                      <span title={freshnessTitle}>Updated {freshnessLabel}</span>
+                    </div>
+                  ) : (
+                    <p className="mt-3 text-sm text-gray-500">No recent price timestamp available.</p>
+                  )}
                 </div>
               </div>
 

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Fuel, LocateFixed, RefreshCw, Search, X } from 'lucide-react';
+import { Fuel, LocateFixed, Search, X } from 'lucide-react';
 
 import {
   searchLocation,
@@ -17,7 +17,6 @@ import {
   type StationDetailRecord,
   type StationMapRecord,
 } from '@/app/actions/stations';
-import { syncFuelData } from '@/app/actions/sync';
 import StationDrawer from './StationDrawer';
 
 const MapComponent = dynamic(async () => (await import('./Map')).default, {
@@ -71,7 +70,6 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [isLocating, setIsLocating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [isSyncing, setIsSyncing] = useState(false);
   const [focusLocation, setFocusLocation] = useState<UserLocation | null>(null);
   const [focusedLocationLabel, setFocusedLocationLabel] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -79,7 +77,6 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [locationSuggestionMessage, setLocationSuggestionMessage] = useState<string | null>(null);
   const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState(false);
-  const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
   const lastBoundsKeyRef = useRef<string | null>(null);
@@ -94,7 +91,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const hasAnyStationData = stationCatalogCount > 0;
   const stationSummary = useMemo(() => {
     if (!hasAnyStationData) {
-      return 'Run the first sync to load stations onto the map';
+      return 'Station data will appear after the next scheduled sync';
     }
 
     if (matchingStationCount === 0) {
@@ -113,28 +110,6 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     setMatchingStationCount(totalStationCount);
     setStationCatalogCount(totalStationCount);
   }, [initialStations, totalStationCount]);
-
-  const handleSync = async () => {
-    setIsSyncing(true);
-    setSyncMessage(null);
-    setSyncError(null);
-
-    try {
-      const result = await syncFuelData();
-
-      if (result.success) {
-        setSyncMessage(result.message);
-        setStations(initialStations);
-        router.refresh();
-      } else {
-        setSyncError(result.error);
-      }
-    } catch {
-      setSyncError('Unexpected error while syncing fuel data.');
-    } finally {
-      setIsSyncing(false);
-    }
-  };
 
   const handleStationSelect = useCallback(async (stationId: string) => {
     setLoadingStation(true);
@@ -231,7 +206,6 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     setLocationSuggestionMessage(null);
     setShowLocationSuggestions(false);
     setSyncError(null);
-    setSyncMessage(null);
     setIsMobileSearchExpanded(false);
   }, []);
 
@@ -375,7 +349,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
   useEffect(() => {
     const maybeRefreshOnFocus = () => {
-      if (document.visibilityState !== 'visible' || isSyncing || loadingStations) {
+      if (document.visibilityState !== 'visible' || loadingStations) {
         return;
       }
 
@@ -428,7 +402,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       window.removeEventListener('focus', maybeRefreshOnFocus);
       document.removeEventListener('visibilitychange', maybeRefreshOnFocus);
     };
-  }, [isSyncing, loadingStations, router]);
+  }, [loadingStations, router]);
 
   const handleViewportChange = useCallback(async (bounds: StationBoundsInput) => {
     const boundsKey = [
@@ -621,15 +595,11 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
             </div>
           </div>
 
-          {(syncMessage || syncError) && (
+          {syncError && (
             <div
-              className={`pointer-events-auto rounded-2xl px-4 py-3 text-sm shadow-lg backdrop-blur-md ${
-                syncError
-                  ? 'border border-red-200 bg-red-50/80 text-red-700'
-                  : 'border border-green-200 bg-green-50/80 text-green-700'
-              }`}
+              className="pointer-events-auto rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700 shadow-lg backdrop-blur-md"
             >
-              {syncError ?? syncMessage}
+              {syncError}
             </div>
           )}
         </div>
@@ -709,7 +679,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         </div>
       )}
 
-      {!hasAnyStationData && !isSyncing && (
+      {!hasAnyStationData && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
           <div className="pointer-events-auto w-full max-w-md rounded-3xl border border-gray-100 bg-white/80 p-8 text-center shadow-2xl backdrop-blur-md">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
@@ -717,16 +687,9 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
             </div>
             <h2 className="text-2xl font-bold tracking-tight text-gray-900">No station data yet</h2>
             <p className="mt-3 text-sm leading-relaxed text-gray-500">
-              Pull the latest forecourt and price batches from the official Fuel Finder API to
-              populate the map and unlock the station drawer history.
+              Station data is imported automatically on a schedule. Once the next sync completes,
+              prices and station history will appear here.
             </p>
-            <button
-              onClick={handleSync}
-              className="mt-8 inline-flex items-center gap-2 rounded-xl bg-blue-600 px-6 py-3 text-sm font-semibold text-white shadow-md transition-all hover:bg-blue-700 hover:shadow-lg active:scale-95"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Start first sync
-            </button>
           </div>
         </div>
       )}

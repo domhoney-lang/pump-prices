@@ -56,6 +56,23 @@ export type FuelSyncResult =
       error: string;
     };
 
+type SyncLogPayload = {
+  mode: FuelSyncMode;
+  stationBatchCount: number;
+  priceBatchCount: number;
+  syncedStations: number;
+  insertedPriceChanges: number;
+  syncedCurrentPrices: number;
+  durationSeconds: number;
+  incrementalStartTimestamp: string | null;
+  success: boolean;
+  error?: string;
+};
+
+function logSyncResult(payload: SyncLogPayload) {
+  console.log('[fuel-sync]', JSON.stringify(payload));
+}
+
 function chunkArray<T>(items: T[], chunkSize: number) {
   const chunks: T[][] = [];
 
@@ -336,16 +353,18 @@ async function insertChangedPrices(batch: FuelFinderPriceStation[], knownStation
 }
 
 export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): Promise<FuelSyncResult> {
+  const mode = options.mode ?? "incremental";
+  const startedAt = Date.now();
+  let stationBatchCount = 0;
+  let priceBatchCount = 0;
+  let syncedStations = 0;
+  let insertedPriceChanges = 0;
+  let syncedCurrentPrices = 0;
+  let incrementalStartTimestamp: string | undefined;
+
   try {
-    const mode = options.mode ?? "incremental";
-    const startedAt = Date.now();
-    let stationBatchCount = 0;
-    let priceBatchCount = 0;
-    let syncedStations = 0;
-    let insertedPriceChanges = 0;
-    let syncedCurrentPrices = 0;
     const knownStationIds = await getKnownStationIds();
-    const incrementalStartTimestamp =
+    incrementalStartTimestamp =
       mode === "full-price-backfill" ? undefined : await getIncrementalStartTimestamp();
 
     if (mode === "full-price-backfill") {
@@ -365,24 +384,28 @@ export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): P
     }
 
     const durationSeconds = Number(((Date.now() - startedAt) / 1000).toFixed(1));
+    const stats = {
+      mode,
+      stationBatchCount,
+      priceBatchCount,
+      syncedStations,
+      insertedPriceChanges,
+      syncedCurrentPrices,
+      durationSeconds,
+      incrementalStartTimestamp: incrementalStartTimestamp ?? null,
+    };
+
+    logSyncResult({
+      ...stats,
+      success: true,
+    });
 
     return {
       success: true,
       message: `Synced ${syncedStations} stations across ${stationBatchCount} batches, refreshed ${syncedCurrentPrices} current prices, and inserted ${insertedPriceChanges} changed prices across ${priceBatchCount} price batches in ${durationSeconds}s.`,
-      stats: {
-        mode,
-        stationBatchCount,
-        priceBatchCount,
-        syncedStations,
-        insertedPriceChanges,
-        syncedCurrentPrices,
-        durationSeconds,
-        incrementalStartTimestamp: incrementalStartTimestamp ?? null,
-      },
+      stats,
     };
   } catch (error) {
-    console.error("Sync failed:", error);
-
     const messageParts = [];
 
     if (error instanceof Error) {
@@ -398,9 +421,25 @@ export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): P
       }
     }
 
+    const errorMessage = messageParts.length > 0 ? messageParts.join(": ") : "Unknown sync error";
+    const durationSeconds = Number(((Date.now() - startedAt) / 1000).toFixed(1));
+
+    logSyncResult({
+      mode,
+      stationBatchCount,
+      priceBatchCount,
+      syncedStations,
+      insertedPriceChanges,
+      syncedCurrentPrices,
+      durationSeconds,
+      incrementalStartTimestamp: incrementalStartTimestamp ?? null,
+      success: false,
+      error: errorMessage,
+    });
+
     return {
       success: false,
-      error: messageParts.length > 0 ? messageParts.join(": ") : "Unknown sync error",
+      error: errorMessage,
     };
   }
 }

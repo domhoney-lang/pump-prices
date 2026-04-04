@@ -1,6 +1,6 @@
 'use client';
 
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef } from 'react';
 import { CircleMarker, MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -151,7 +151,7 @@ export default function Map({
   onStationSelect,
   onViewportChange,
 }: MapProps) {
-  const mapInstanceKeyRef = useRef(`map-${Math.random().toString(36).slice(2)}`);
+  const mapInstanceKey = useId();
   const normalizedFuelType = fuelType.toLowerCase();
 
   const stationPrices = useMemo(() => {
@@ -243,7 +243,7 @@ export default function Map({
   return (
     <div className="absolute inset-0 z-0">
       <MapContainer
-        key={mapInstanceKeyRef.current}
+        key={mapInstanceKey}
         center={DEFAULT_CENTER}
         zoom={DEFAULT_ZOOM}
         className="w-full h-full"

@@ -1,7 +1,7 @@
 Changelog:
 - Interactive UK fuel-price map with colour-coded markers for unleaded and diesel.
 - Location search, geolocation focus, and station detail drawer for nearby stations.
-- Manual sync, protected `/api/sync` endpoint, GitHub Actions scheduling, and Lambda backfill support.
+- Protected `/api/sync` endpoint, GitHub Actions scheduling, and Lambda backfill support.
 
 ## Local Development
 
@@ -126,10 +126,17 @@ For local development, `DATABASE_URL` and `DIRECT_URL` can point to the local Pr
 
 ## Syncing Fuel Data
 
-- Use the in-app `Initial sync` or `Refresh` button to run a manual import.
 - For scheduled imports, call `/api/sync` with either `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
 - For a one-off full price backfill, run `npm run sync:fuel-data -- --mode=full-price-backfill`.
 - For an online-only one-off backfill through AWS Lambda, invoke the worker with `{"mode":"full-price-backfill"}`.
+
+## Freshness Labels
+
+The station drawer classifies unleaded and diesel price timestamps using these bands:
+
+- `Fresh`: under 24 hours old
+- `Still good`: 24 to 48 hours old
+- `Stale`: over 48 hours old
 
 ## GitHub Actions Scheduler
 
