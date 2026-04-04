@@ -34,6 +34,8 @@ type UserLocation = {
   lng: number;
 };
 
+const FOCUS_REFRESH_COOLDOWN_MS = 60_000;
+
 export default function ClientMap({ initialStations, totalStationCount }: ClientMapProps) {
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
@@ -51,6 +53,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const lastBoundsKeyRef = useRef<string | null>(null);
   const viewportRequestIdRef = useRef(0);
   const hasAttemptedAutoLocateRef = useRef(false);
+  const lastAutoRefreshAtRef = useRef(0);
 
   const hasStations = stations.length > 0;
   const stationSummary = useMemo(() => {
@@ -91,7 +94,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     setLoadingStation(true);
 
     try {
-      const station = await getStationDetails(stationId);
+      const station: StationDetailRecord | null = await getStationDetails(stationId);
       setSelectedStation(station);
       setIsDrawerOpen(true);
     } catch (error) {
@@ -174,6 +177,30 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         // Ignore unsupported permission-query implementations and keep manual location.
       });
   }, [requestUserLocation]);
+
+  useEffect(() => {
+    const maybeRefreshOnFocus = () => {
+      if (document.visibilityState !== 'visible' || isSyncing || loadingStations) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastAutoRefreshAtRef.current < FOCUS_REFRESH_COOLDOWN_MS) {
+        return;
+      }
+
+      lastAutoRefreshAtRef.current = now;
+      router.refresh();
+    };
+
+    window.addEventListener('focus', maybeRefreshOnFocus);
+    document.addEventListener('visibilitychange', maybeRefreshOnFocus);
+
+    return () => {
+      window.removeEventListener('focus', maybeRefreshOnFocus);
+      document.removeEventListener('visibilitychange', maybeRefreshOnFocus);
+    };
+  }, [isSyncing, loadingStations, router]);
 
   const handleViewportChange = useCallback(async (bounds: StationBoundsInput) => {
     const boundsKey = [

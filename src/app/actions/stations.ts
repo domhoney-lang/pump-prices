@@ -19,19 +19,25 @@ const stationMapInclude = {
   },
 } satisfies Prisma.StationInclude;
 
+const stationDetailInclude = {
+  currentPrices: {
+    orderBy: {
+      fuelType: 'asc',
+    },
+  },
+  prices: {
+    orderBy: {
+      timestamp: 'desc',
+    },
+  },
+} satisfies Prisma.StationInclude;
+
 export type StationMapRecord = Prisma.StationGetPayload<{
   include: typeof stationMapInclude;
 }>;
 
 export type StationDetailRecord = Prisma.StationGetPayload<{
-  include: {
-    currentPrices: true;
-    prices: {
-      orderBy: {
-        timestamp: 'desc';
-      };
-    };
-  };
+  include: typeof stationDetailInclude;
 }>;
 
 export type StationsPageData = {
@@ -97,21 +103,10 @@ export async function getStationsInBounds(bounds: StationBoundsInput) {
   return loadStations(bounds);
 }
 
-export async function getStationDetails(id: string) {
+export async function getStationDetails(id: string): Promise<StationDetailRecord | null> {
   const station = await prisma.station.findUnique({
     where: { id },
-    include: {
-      currentPrices: {
-        orderBy: {
-          fuelType: 'asc',
-        },
-      },
-      prices: {
-        orderBy: {
-          timestamp: 'desc',
-        },
-      },
-    },
+    include: stationDetailInclude,
   });
 
   return station;
