@@ -23,10 +23,39 @@ L.Icon.Default.mergeOptions({
 interface MapProps {
   stations: StationMapRecord[];
   fuelType: 'unleaded' | 'diesel';
-  focusLocation: { lat: number; lng: number } | null;
+  mapFocusLocation: { lat: number; lng: number; zoom?: number } | null;
+  userLocation: { lat: number; lng: number } | null;
   selectedStationId: string | null;
   onStationSelect: (stationId: string) => void;
   onViewportChange: (bounds: StationBoundsInput) => void;
+}
+
+const LOCATION_MARKER_COLOR = '#1d4ed8';
+const LOCATION_MARKER_FILL = '#2563eb';
+
+function locationsMatch(
+  left: { lat: number; lng: number } | null,
+  right: { lat: number; lng: number } | null,
+) {
+  if (!left || !right) {
+    return false;
+  }
+
+  return Math.abs(left.lat - right.lat) < 0.0001 && Math.abs(left.lng - right.lng) < 0.0001;
+}
+
+function createSearchPinIcon() {
+  return L.divIcon({
+    className: 'search-focus-marker',
+    html: `<div class="relative flex items-center justify-center">
+      <div class="absolute h-8 w-8 rounded-full bg-violet-500/20 blur-sm"></div>
+      <div class="relative h-6 w-6 rounded-full border-2 border-white bg-violet-600 shadow-lg"></div>
+      <div class="absolute top-[18px] h-0 w-0 border-l-[8px] border-r-[8px] border-t-[14px] border-l-transparent border-r-transparent border-t-violet-700 drop-shadow-sm"></div>
+      <div class="absolute h-2.5 w-2.5 rounded-full bg-white"></div>
+    </div>`,
+    iconSize: [28, 36],
+    iconAnchor: [14, 34],
+  });
 }
 
 type StationMarkerEntry = {
@@ -135,26 +164,28 @@ function ZoomSync({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
 }
 
 function FocusLocation({
-  focusLocation,
+  mapFocusLocation,
 }: {
-  focusLocation: { lat: number; lng: number } | null;
+  mapFocusLocation: { lat: number; lng: number; zoom?: number } | null;
 }) {
   const map = useMap();
 
   useEffect(() => {
-    if (!focusLocation) {
+    if (!mapFocusLocation) {
       return;
     }
 
     try {
-      map.flyTo([focusLocation.lat, focusLocation.lng], Math.max(map.getZoom(), 13), {
+      const targetZoom = mapFocusLocation.zoom ?? Math.max(map.getZoom(), 13);
+
+      map.flyTo([mapFocusLocation.lat, mapFocusLocation.lng], targetZoom, {
         animate: true,
         duration: 1,
       });
     } catch {
       // Ignore stale-map errors during Fast Refresh.
     }
-  }, [focusLocation, map]);
+  }, [map, mapFocusLocation]);
 
   return null;
 }
@@ -229,10 +260,13 @@ const StationClusters = memo(function StationClusters({
   );
 });
 
+const searchPinIcon = createSearchPinIcon();
+
 export default function Map({
   stations,
   fuelType,
-  focusLocation,
+  mapFocusLocation,
+  userLocation,
   selectedStationId,
   onStationSelect,
   onViewportChange,
@@ -372,6 +406,7 @@ export default function Map({
       };
     });
   }, [mapZoom, selectedStationId, shouldClusterMarkers, stationMarkers]);
+  const showSearchMarker = mapFocusLocation !== null && !locationsMatch(mapFocusLocation, userLocation);
 
   return (
     <div className="absolute inset-0 z-0">
@@ -384,22 +419,25 @@ export default function Map({
       >
         <ViewportSync onViewportChange={onViewportChange} />
         <ZoomSync onZoomChange={setMapZoom} />
-        <FocusLocation focusLocation={focusLocation} />
+        <FocusLocation mapFocusLocation={mapFocusLocation} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
           url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         />
-        {focusLocation && (
+        {userLocation && (
           <CircleMarker
-            center={[focusLocation.lat, focusLocation.lng]}
+            center={[userLocation.lat, userLocation.lng]}
             radius={10}
             pathOptions={{
-              color: '#1d4ed8',
-              fillColor: '#2563eb',
+              color: LOCATION_MARKER_COLOR,
+              fillColor: LOCATION_MARKER_FILL,
               fillOpacity: 0.45,
               weight: 2,
             }}
           />
+        )}
+        {showSearchMarker && mapFocusLocation && (
+          <Marker position={[mapFocusLocation.lat, mapFocusLocation.lng]} icon={searchPinIcon} />
         )}
         {shouldClusterMarkers ? (
           <StationClusters clusters={clusteredMarkers} />

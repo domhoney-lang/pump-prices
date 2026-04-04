@@ -1,5 +1,12 @@
 'use client';
 
+/*
+Changelog:
+- Split searched map focus from actual user location so the blue dot only represents geolocation.
+- Added a distinct purple search pin and restored the geolocation button's focused zoom behavior.
+- Unified price colors across the map, drawer, and nearby list, and improved mobile search input focus.
+*/
+
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -43,6 +50,10 @@ type UserLocation = {
   lng: number;
 };
 
+type MapFocusTarget = UserLocation & {
+  zoom?: number;
+};
+
 type ErrorBanner = {
   id: 'search' | 'geolocation' | 'station-load' | 'station-detail';
   title: string;
@@ -51,6 +62,26 @@ type ErrorBanner = {
 
 const FOCUS_REFRESH_COOLDOWN_MS = 60_000;
 const LOCATION_SUGGESTION_DEBOUNCE_MS = 250;
+const USER_LOCATION_ACTIVE_RADIUS_MILES = 0.25;
+const USER_LOCATION_FOCUS_ZOOM = 13;
+
+function toRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function getDistanceMiles(origin: UserLocation, destination: UserLocation) {
+  const earthRadiusMiles = 3958.8;
+  const latDelta = toRadians(destination.lat - origin.lat);
+  const lngDelta = toRadians(destination.lng - origin.lng);
+  const originLat = toRadians(origin.lat);
+  const destinationLat = toRadians(destination.lat);
+
+  const haversine =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(originLat) * Math.cos(destinationLat) * Math.sin(lngDelta / 2) ** 2;
+
+  return 2 * earthRadiusMiles * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
 
 function getGeolocationErrorMessage(error: GeolocationPositionError) {
   if (!window.isSecureContext) {
@@ -89,8 +120,9 @@ export default function ClientMap({
   const [isLocating, setIsLocating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
-  const [focusLocation, setFocusLocation] = useState<UserLocation | null>(null);
-  const [focusedLocationLabel, setFocusedLocationLabel] = useState<string | null>(null);
+  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [mapFocusLocation, setMapFocusLocation] = useState<MapFocusTarget | null>(null);
+  const [mapFocusLabel, setMapFocusLabel] = useState<string | null>(null);
   const [viewportCenter, setViewportCenter] = useState<UserLocation | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSearchResult[]>([]);
@@ -112,18 +144,25 @@ export default function ClientMap({
   const viewportRequestIdRef = useRef(0);
   const suggestionRequestIdRef = useRef(0);
   const blurHideSuggestionsTimeoutRef = useRef<number | null>(null);
+  const locationSearchInputRef = useRef<HTMLInputElement | null>(null);
   const hasAttemptedAutoLocateRef = useRef(false);
   const lastAutoRefreshAtRef = useRef(0);
 
   const hasStations = stations.length > 0;
   const hasAnyStationData = stationCatalogCount > 0;
+  const isFocusedOnUserLocation =
+    userLocation !== null &&
+    viewportCenter !== null &&
+    mapFocusLabel === 'Your location' &&
+    getDistanceMiles(userLocation, viewportCenter) <= USER_LOCATION_ACTIVE_RADIUS_MILES;
+  const distanceReferenceLocation = userLocation ?? mapFocusLocation;
   const stationSummary = useMemo(() => {
     if (!hasAnyStationData) {
       return 'Station data will appear after the next scheduled sync';
     }
 
     if (matchingStationCount === 0) {
-      return focusLocation
+      return mapFocusLocation
         ? 'No nearby stations in the current map area'
         : 'No stations in the current map area';
     }
@@ -137,7 +176,7 @@ export default function ClientMap({
     }
 
     return `Showing ${stations.length} of ${matchingStationCount} stations in this area`;
-  }, [focusLocation, hasAnyStationData, matchingStationCount, stationCatalogCount, stations.length]);
+  }, [hasAnyStationData, mapFocusLocation, matchingStationCount, stationCatalogCount, stations.length]);
 
   const cappedStationsMessage = useMemo(() => {
     if (!isStationResultsCapped || loadingStations || matchingStationCount <= stations.length) {
@@ -178,12 +217,12 @@ export default function ClientMap({
   }, [geolocationError, searchError, stationDetailError, stationLoadError]);
 
   const noViewportStationsMessage = useMemo(() => {
-    if (!hasAnyStationData || loadingStations || matchingStationCount > 0 || focusLocation) {
+    if (!hasAnyStationData || loadingStations || matchingStationCount > 0 || mapFocusLocation) {
       return null;
     }
 
     return 'No stations are visible in this map area. Pan or zoom out to load more stations.';
-  }, [focusLocation, hasAnyStationData, loadingStations, matchingStationCount]);
+  }, [hasAnyStationData, loadingStations, mapFocusLocation, matchingStationCount]);
 
   const mobileNearbyListPosition = hasStations
     ? isNearbyListOpen
@@ -261,11 +300,14 @@ export default function ClientMap({
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setFocusLocation({
+        const location = {
           lat: position.coords.latitude,
           lng: position.coords.longitude,
-        });
-        setFocusedLocationLabel('Your location');
+        };
+
+        setUserLocation(location);
+        setMapFocusLocation({ ...location, zoom: USER_LOCATION_FOCUS_ZOOM });
+        setMapFocusLabel('Your location');
         setSearchQuery('');
         setLocationSuggestions([]);
         setLocationSuggestionMessage(null);
@@ -279,18 +321,11 @@ export default function ClientMap({
           !isHighAccuracy &&
           (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT)
         ) {
-          console.warn('Coarse geolocation failed, retrying with high accuracy...', error.message);
           requestUserLocation({ ...options, enableHighAccuracy: true });
           return;
         }
 
         const message = getGeolocationErrorMessage(error);
-
-        console.warn('Geolocation lookup failed', {
-          code: error.code,
-          message: error.message,
-          secureContext: window.isSecureContext,
-        });
 
         if (!options?.silent) {
           setGeolocationError(message);
@@ -310,11 +345,12 @@ export default function ClientMap({
   };
 
   const applyFocusLocation = useCallback((location: LocationSearchResult) => {
-    setFocusLocation({
+    setMapFocusLocation({
       lat: location.lat,
       lng: location.lng,
+      zoom: undefined,
     });
-    setFocusedLocationLabel(location.label);
+    setMapFocusLabel(location.label);
     setSearchQuery(location.label);
     setLocationSuggestions([]);
     setLocationSuggestionMessage(null);
@@ -400,6 +436,20 @@ export default function ClientMap({
       isActive = false;
     };
   }, [requestUserLocation]);
+
+  useEffect(() => {
+    if (!isMobileSearchExpanded) {
+      return;
+    }
+
+    const focusInput = window.setTimeout(() => {
+      locationSearchInputRef.current?.focus();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(focusInput);
+    };
+  }, [isMobileSearchExpanded]);
 
   useEffect(() => {
     return () => {
@@ -618,20 +668,20 @@ export default function ClientMap({
                       </span>
                       <button
                         onClick={() => setFuelType('unleaded')}
-                        className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+                        className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
                           fuelType === 'unleaded'
-                            ? 'bg-white text-gray-900 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
+                            ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
                         }`}
                       >
                         Unleaded
                       </button>
                       <button
                         onClick={() => setFuelType('diesel')}
-                        className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+                        className={`flex-1 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
                           fuelType === 'diesel'
-                            ? 'bg-white text-gray-900 shadow-sm'
-                            : 'text-gray-500 hover:text-gray-700'
+                            ? 'border-blue-200 bg-blue-50 text-blue-700 shadow-sm'
+                            : 'border-transparent text-gray-500 hover:text-gray-700'
                         }`}
                       >
                         Diesel
@@ -643,7 +693,11 @@ export default function ClientMap({
                         type="button"
                         onClick={handleLocateUser}
                         disabled={isLocating}
-                        className="hidden shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:inline-flex"
+                        className={`hidden shrink-0 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-60 sm:inline-flex ${
+                          isFocusedOnUserLocation || isLocating
+                            ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                            : 'border-gray-200 bg-white text-gray-700 hover:bg-gray-50'
+                        }`}
                         title="Use my location"
                       >
                         <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
@@ -654,6 +708,7 @@ export default function ClientMap({
                         Search for an address, postcode, or area
                       </label>
                       <input
+                        ref={locationSearchInputRef}
                         id="location-search"
                         type="search"
                         value={searchQuery}
@@ -715,9 +770,9 @@ export default function ClientMap({
                   )}
                 </div>
 
-                {focusedLocationLabel && (
+                {mapFocusLabel && (
                   <p className="truncate text-xs text-gray-500">
-                    Focused on <span className="font-medium text-gray-700">{focusedLocationLabel}</span>
+                    Focused on <span className="font-medium text-gray-700">{mapFocusLabel}</span>
                   </p>
                 )}
               </div>
@@ -744,7 +799,8 @@ export default function ClientMap({
       <MapComponent
         stations={stations}
         fuelType={fuelType}
-        focusLocation={focusLocation}
+        mapFocusLocation={mapFocusLocation}
+        userLocation={userLocation}
         selectedStationId={activeStationId}
         onStationSelect={handleStationSelect}
         onViewportChange={handleViewportChange}
@@ -793,20 +849,20 @@ export default function ClientMap({
         <div className="pointer-events-auto flex flex-1 items-center gap-1 rounded-2xl border border-gray-100 bg-white/80 p-1.5 shadow-lg backdrop-blur-md">
           <button
             onClick={() => setFuelType('unleaded')}
-            className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
               fuelType === 'unleaded'
-                ? 'bg-gray-100 text-gray-900'
-                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
             }`}
           >
             Unleaded
           </button>
           <button
             onClick={() => setFuelType('diesel')}
-            className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
               fuelType === 'diesel'
-                ? 'bg-gray-100 text-gray-900'
-                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
             }`}
           >
             Diesel
@@ -839,10 +895,14 @@ export default function ClientMap({
           type="button"
           onClick={handleLocateUser}
           disabled={isLocating}
-          className="pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-white/80 px-4 shadow-lg backdrop-blur-md transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
+          className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+            isFocusedOnUserLocation || isLocating
+              ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+              : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+          }`}
           title="Use my location"
         >
-          <LocateFixed className={`h-5 w-5 text-gray-700 ${isLocating ? 'animate-pulse' : ''}`} />
+          <LocateFixed className={`h-5 w-5 ${isLocating ? 'animate-pulse' : ''}`} />
         </button>
       </div>
 
@@ -947,7 +1007,7 @@ export default function ClientMap({
           setStationDetailError(null);
         }}
         fuelType={fuelType}
-        focusLocation={focusLocation}
+        focusLocation={distanceReferenceLocation}
       />
     </div>
   );
