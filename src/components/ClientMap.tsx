@@ -178,6 +178,10 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
           lng: position.coords.longitude,
         });
         setFocusedLocationLabel('Your location');
+        setSearchQuery('');
+        setLocationSuggestions([]);
+        setLocationSuggestionMessage(null);
+        setShowLocationSuggestions(false);
         setIsLocating(false);
       },
       (error) => {
