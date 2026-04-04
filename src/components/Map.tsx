@@ -23,6 +23,7 @@ interface MapProps {
   stations: StationMapRecord[];
   fuelType: 'unleaded' | 'diesel';
   focusLocation: { lat: number; lng: number } | null;
+  selectedStationId: string | null;
   onStationSelect: (stationId: string) => void;
   onViewportChange: (bounds: StationBoundsInput) => void;
 }
@@ -148,6 +149,7 @@ export default function Map({
   stations,
   fuelType,
   focusLocation,
+  selectedStationId,
   onStationSelect,
   onViewportChange,
 }: MapProps) {
@@ -208,22 +210,37 @@ export default function Map({
     return { bg: 'bg-amber-500', hoverBg: 'group-hover:bg-amber-600', border: 'border-t-amber-500', hoverBorder: 'group-hover:border-t-amber-600', ring: 'bg-amber-500/30' };
   }, [cheapThreshold, expensiveThreshold]);
 
-  const createCustomIcon = useCallback((price: number | undefined, isCheapest: boolean) => {
+  const createCustomIcon = useCallback((
+    price: number | undefined,
+    isCheapest: boolean,
+    isSelected: boolean,
+  ) => {
     const priceText = price ? `${price.toFixed(1)}p` : 'N/A';
     const width = Math.max(48, priceText.length * 10 + 20);
     const height = 30;
     const colors = getPriceColorClasses(price);
+    const selectionClasses = isSelected
+      ? {
+          ring: 'opacity-100 scale-110',
+          pill: 'ring-4 ring-blue-300 ring-offset-2 ring-offset-white scale-105 shadow-xl',
+          pointer: 'border-t-blue-500',
+        }
+      : {
+          ring: 'opacity-0 group-hover:opacity-100',
+          pill: '',
+          pointer: '',
+        };
 
     return L.divIcon({
       className: 'custom-marker',
       html: `<div class="relative group cursor-pointer drop-shadow-md">
                ${isCheapest ? `<div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10 tracking-widest whitespace-nowrap border border-amber-300">BEST</div>` : ''}
-               <div class="absolute -inset-1 ${colors.ring} rounded-full blur-sm opacity-0 group-hover:opacity-100 transition-opacity"></div>
-               <div class="relative ${colors.bg} text-white font-bold px-2.5 py-1 rounded-full text-sm whitespace-nowrap border-2 border-white ${colors.hoverBg} transition-colors flex items-center justify-center">
+               <div class="absolute -inset-1 ${colors.ring} rounded-full blur-sm transition-all ${selectionClasses.ring}"></div>
+               <div class="relative ${colors.bg} text-white font-bold px-2.5 py-1 rounded-full text-sm whitespace-nowrap border-2 border-white ${colors.hoverBg} ${selectionClasses.pill} transition-all flex items-center justify-center">
                  ${priceText}
                </div>
                <div class="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-white"></div>
-               <div class="absolute -bottom-[4px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] ${colors.border} ${colors.hoverBorder} transition-colors"></div>
+               <div class="absolute -bottom-[4px] left-1/2 -translate-x-1/2 w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-t-[4px] ${colors.border} ${colors.hoverBorder} ${selectionClasses.pointer} transition-colors"></div>
              </div>`,
       iconSize: [width, height],
       iconAnchor: [Math.round(width / 2), height + 6],
@@ -236,9 +253,10 @@ export default function Map({
       icon: createCustomIcon(
         latestPrice,
         latestPrice !== undefined && latestPrice === absoluteCheapestPrice,
+        station.id === selectedStationId,
       ),
     }));
-  }, [absoluteCheapestPrice, createCustomIcon, stationPrices]);
+  }, [absoluteCheapestPrice, createCustomIcon, selectedStationId, stationPrices]);
 
   return (
     <div className="absolute inset-0 z-0">

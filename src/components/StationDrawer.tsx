@@ -3,14 +3,21 @@
 import { Drawer } from 'vaul';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, formatDistanceToNow, subDays } from 'date-fns';
+import { MapPin, Navigation } from 'lucide-react';
 
 import type { StationDetailRecord } from '@/app/actions/stations';
+
+type FocusLocation = {
+  lat: number;
+  lng: number;
+};
 
 interface StationDrawerProps {
   station: StationDetailRecord | null;
   isOpen: boolean;
   onClose: () => void;
   fuelType: 'unleaded' | 'diesel';
+  focusLocation: FocusLocation | null;
 }
 
 function getFreshnessTone(updatedAt: Date) {
@@ -36,7 +43,47 @@ function getFreshnessTone(updatedAt: Date) {
   };
 }
 
-export default function StationDrawer({ station, isOpen, onClose, fuelType }: StationDrawerProps) {
+function toRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function getDistanceMiles(origin: FocusLocation, destination: Pick<StationDetailRecord, 'lat' | 'lng'>) {
+  const earthRadiusMiles = 3958.8;
+  const latDelta = toRadians(destination.lat - origin.lat);
+  const lngDelta = toRadians(destination.lng - origin.lng);
+  const originLat = toRadians(origin.lat);
+  const destinationLat = toRadians(destination.lat);
+
+  const haversine =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(originLat) * Math.cos(destinationLat) * Math.sin(lngDelta / 2) ** 2;
+
+  return 2 * earthRadiusMiles * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function formatDistanceMiles(distanceMiles: number) {
+  if (distanceMiles < 0.1) {
+    return '<0.1 mi';
+  }
+
+  if (distanceMiles < 10) {
+    return `${distanceMiles.toFixed(1)} mi`;
+  }
+
+  return `${Math.round(distanceMiles)} mi`;
+}
+
+function getDirectionsUrl(lat: number, lng: number) {
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
+}
+
+export default function StationDrawer({
+  station,
+  isOpen,
+  onClose,
+  fuelType,
+  focusLocation,
+}: StationDrawerProps) {
   if (!station) return null;
 
   const relevantPrices = station.prices
@@ -68,6 +115,7 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
   const freshnessTitle = freshnessTimestamp
     ? `Price reported ${format(freshnessTimestamp, 'PPpp')}`
     : undefined;
+  const distanceMiles = focusLocation ? getDistanceMiles(focusLocation, station) : null;
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={(open) => !open && onClose()}>
@@ -91,6 +139,24 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
                 <p className="text-gray-500 text-sm leading-relaxed">
                   {station.address}{station.postcode ? `, ${station.postcode}` : ''}
                 </p>
+                <div className="mt-3 flex items-center gap-2">
+                  {distanceMiles !== null && (
+                    <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">
+                      <MapPin className="h-3.5 w-3.5" />
+                      <span>{formatDistanceMiles(distanceMiles)}</span>
+                    </div>
+                  )}
+                  <a
+                    href={getDirectionsUrl(station.lat, station.lng)}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Open directions in Google Maps"
+                    title="Open in Google Maps"
+                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                  >
+                    <Navigation className="h-4 w-4" />
+                  </a>
+                </div>
               </div>
 
               <div className="bg-gradient-to-br from-blue-50 to-indigo-50/30 rounded-2xl p-5 mb-8 border border-blue-100/50 flex justify-between items-center shadow-sm">

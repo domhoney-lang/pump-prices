@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Fuel, LocateFixed, Search, X } from 'lucide-react';
+import { Fuel, List, LocateFixed, Search, X } from 'lucide-react';
 
 import {
   searchLocation,
@@ -17,6 +17,7 @@ import {
   type StationDetailRecord,
   type StationMapRecord,
 } from '@/app/actions/stations';
+import NearbyStationsList from './NearbyStationsList';
 import StationDrawer from './StationDrawer';
 
 const MapComponent = dynamic(async () => (await import('./Map')).default, {
@@ -36,6 +37,12 @@ interface ClientMapProps {
 type UserLocation = {
   lat: number;
   lng: number;
+};
+
+type ErrorBanner = {
+  id: 'search' | 'geolocation' | 'station-load' | 'station-detail';
+  title: string;
+  message: string;
 };
 
 const FOCUS_REFRESH_COOLDOWN_MS = 60_000;
@@ -61,6 +68,7 @@ function getGeolocationErrorMessage(error: GeolocationPositionError) {
 export default function ClientMap({ initialStations, totalStationCount }: ClientMapProps) {
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
+  const [activeStationId, setActiveStationId] = useState<string | null>(null);
   const [selectedStation, setSelectedStation] = useState<StationDetailRecord | null>(null);
   const [stations, setStations] = useState(initialStations);
   const [stationCatalogCount, setStationCatalogCount] = useState(totalStationCount);
@@ -77,7 +85,11 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [locationSuggestionMessage, setLocationSuggestionMessage] = useState<string | null>(null);
   const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState(false);
-  const [syncError, setSyncError] = useState<string | null>(null);
+  const [isNearbyListOpen, setIsNearbyListOpen] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [geolocationError, setGeolocationError] = useState<string | null>(null);
+  const [stationLoadError, setStationLoadError] = useState<string | null>(null);
+  const [stationDetailError, setStationDetailError] = useState<string | null>(null);
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
   const lastBoundsKeyRef = useRef<string | null>(null);
   const lastBoundsRef = useRef<StationBoundsInput | null>(null);
@@ -95,7 +107,9 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     }
 
     if (matchingStationCount === 0) {
-      return 'No stations in the current map area';
+      return focusLocation
+        ? 'No nearby stations in the current map area'
+        : 'No stations in the current map area';
     }
 
     if (matchingStationCount === stationCatalogCount) {
@@ -103,7 +117,38 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     }
 
     return `Showing ${stations.length} of ${matchingStationCount} stations in this area`;
-  }, [hasAnyStationData, matchingStationCount, stationCatalogCount, stations.length]);
+  }, [focusLocation, hasAnyStationData, matchingStationCount, stationCatalogCount, stations.length]);
+
+  const errorBanners = useMemo<ErrorBanner[]>(() => {
+    return [
+      searchError
+        ? { id: 'search', title: 'Search issue', message: searchError }
+        : null,
+      geolocationError
+        ? { id: 'geolocation', title: 'Location issue', message: geolocationError }
+        : null,
+      stationLoadError
+        ? { id: 'station-load', title: 'Map update issue', message: stationLoadError }
+        : null,
+      stationDetailError
+        ? { id: 'station-detail', title: 'Station details issue', message: stationDetailError }
+        : null,
+    ].filter((banner): banner is ErrorBanner => banner !== null);
+  }, [geolocationError, searchError, stationDetailError, stationLoadError]);
+
+  const noViewportStationsMessage = useMemo(() => {
+    if (!hasAnyStationData || loadingStations || matchingStationCount > 0 || focusLocation) {
+      return null;
+    }
+
+    return 'No stations are visible in this map area. Pan or zoom out to load more stations.';
+  }, [focusLocation, hasAnyStationData, loadingStations, matchingStationCount]);
+
+  useEffect(() => {
+    if (!focusLocation) {
+      setIsNearbyListOpen(false);
+    }
+  }, [focusLocation]);
 
   useEffect(() => {
     setStations(initialStations);
@@ -112,15 +157,26 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   }, [initialStations, totalStationCount]);
 
   const handleStationSelect = useCallback(async (stationId: string) => {
+    setActiveStationId(stationId);
     setLoadingStation(true);
+    setStationDetailError(null);
 
     try {
       const station: StationDetailRecord | null = await getStationDetails(stationId);
+      if (!station) {
+        setActiveStationId(null);
+        setSelectedStation(null);
+        setIsDrawerOpen(false);
+        setStationDetailError('Station details are unavailable right now.');
+        return;
+      }
+
       setSelectedStation(station);
       setIsDrawerOpen(true);
     } catch (error) {
       console.error('Failed to load station details', error);
-      setSyncError('Could not load station details.');
+      setActiveStationId(null);
+      setStationDetailError('Could not load station details.');
     } finally {
       setLoadingStation(false);
     }
@@ -129,7 +185,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const requestUserLocation = useCallback((options?: { silent?: boolean; enableHighAccuracy?: boolean }) => {
     if (!navigator.geolocation) {
       if (!options?.silent) {
-        setSyncError('Geolocation is not supported by this browser.');
+        setGeolocationError('Geolocation is not supported by this browser.');
       }
       return;
     }
@@ -142,7 +198,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     if (!isHighAccuracy) {
       setIsLocating(true);
       if (!options?.silent) {
-        setSyncError(null);
+        setGeolocationError(null);
       }
     }
 
@@ -157,6 +213,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         setLocationSuggestions([]);
         setLocationSuggestionMessage(null);
         setShowLocationSuggestions(false);
+        setGeolocationError(null);
         setIsLocating(false);
       },
       (error) => {
@@ -179,7 +236,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         });
 
         if (!options?.silent) {
-          setSyncError(message);
+          setGeolocationError(message);
         }
         setIsLocating(false);
       },
@@ -205,7 +262,9 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     setLocationSuggestions([]);
     setLocationSuggestionMessage(null);
     setShowLocationSuggestions(false);
-    setSyncError(null);
+    setSearchError(null);
+    setGeolocationError(null);
+    setStationLoadError(null);
     setIsMobileSearchExpanded(false);
   }, []);
 
@@ -215,30 +274,30 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     const trimmedQuery = searchQuery.trim();
 
     if (trimmedQuery.length < 2) {
-      setSyncError('Enter at least 2 characters to search.');
+      setSearchError('Enter at least 2 characters to search.');
       return;
     }
 
     setIsSearching(true);
-    setSyncError(null);
+    setSearchError(null);
 
     try {
       const result = await searchLocation(trimmedQuery);
 
       if (result.error) {
-        setSyncError(result.error);
+        setSearchError(result.error);
         return;
       }
 
       if (!result.result) {
-        setSyncError('No matching address, postcode, or area was found.');
+        setSearchError('No matching address, postcode, or area was found.');
         return;
       }
 
       applyFocusLocation(result.result);
     } catch (error) {
       console.error('Failed to search for a location', error);
-      setSyncError('Location search is unavailable right now.');
+      setSearchError('Location search is unavailable right now.');
     } finally {
       setIsSearching(false);
     }
@@ -373,7 +432,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
       const requestId = ++viewportRequestIdRef.current;
       setLoadingStations(true);
-      setSyncError(null);
+      setStationLoadError(null);
 
       void getStationsInBounds(bounds)
         .then((result) => {
@@ -391,7 +450,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
           }
 
           console.error('Failed to refresh visible stations', error);
-          setSyncError('Could not refresh stations after returning to the app.');
+          setStationLoadError('Could not refresh stations after returning to the app.');
         })
         .finally(() => {
           if (requestId === viewportRequestIdRef.current) {
@@ -425,7 +484,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     lastBoundsKeyRef.current = boundsKey;
     const requestId = ++viewportRequestIdRef.current;
     setLoadingStations(true);
-    setSyncError(null);
+    setStationLoadError(null);
 
     try {
       const result = await getStationsInBounds(bounds);
@@ -442,7 +501,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       }
 
       console.error('Failed to load visible stations', error);
-      setSyncError('Could not load stations for the current map view.');
+      setStationLoadError('Could not load stations for the current map view.');
     } finally {
       if (requestId === viewportRequestIdRef.current) {
         setLoadingStations(false);
@@ -600,13 +659,14 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
             </div>
           </div>
 
-          {syncError && (
+          {errorBanners.map((banner) => (
             <div
+              key={banner.id}
               className="pointer-events-auto rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm text-red-700 shadow-lg backdrop-blur-md"
             >
-              {syncError}
+              <span className="font-semibold text-red-800">{banner.title}:</span> {banner.message}
             </div>
-          )}
+          ))}
         </div>
       </div>
 
@@ -614,8 +674,26 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         stations={stations}
         fuelType={fuelType}
         focusLocation={focusLocation}
+        selectedStationId={activeStationId}
         onStationSelect={handleStationSelect}
         onViewportChange={handleViewportChange}
+      />
+
+      <NearbyStationsList
+        stations={stations}
+        fuelType={fuelType}
+        focusLocation={focusLocation}
+        focusedLocationLabel={focusedLocationLabel}
+        loading={loadingStations}
+        selectedStationId={activeStationId}
+        onStationSelect={handleStationSelect}
+        className={`absolute left-3 right-3 z-20 max-h-[36dvh] overflow-hidden transition-all duration-200 ${
+          isNearbyListOpen
+            ? 'bottom-24 opacity-100'
+            : 'pointer-events-none bottom-20 translate-y-2 opacity-0'
+        } sm:left-6 sm:right-auto sm:w-full sm:max-w-sm sm:max-h-none sm:translate-y-0 ${
+          isNearbyListOpen ? 'sm:bottom-6' : 'sm:bottom-2'
+        }`}
       />
 
       {/* Mobile Bottom Controls */}
@@ -645,6 +723,28 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
         <button
           type="button"
+          onClick={() => setIsNearbyListOpen((prev) => !prev)}
+          disabled={!focusLocation}
+          className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+            isNearbyListOpen
+              ? 'border-blue-200 bg-blue-50 text-blue-700'
+              : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+          }`}
+          title={
+            focusLocation
+              ? isNearbyListOpen
+                ? 'Hide nearby stations'
+                : 'Show nearby stations'
+              : 'Search or use your location to view nearby stations'
+          }
+          aria-pressed={isNearbyListOpen}
+          aria-label={isNearbyListOpen ? 'Hide nearby stations' : 'Show nearby stations'}
+        >
+          <List className="h-5 w-5" />
+        </button>
+
+        <button
+          type="button"
           onClick={handleLocateUser}
           disabled={isLocating}
           className="pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-white/80 px-4 shadow-lg backdrop-blur-md transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
@@ -654,8 +754,26 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         </button>
       </div>
 
+      {focusLocation && (
+        <div className="pointer-events-none absolute bottom-6 left-6 z-20 hidden sm:block">
+          <button
+            type="button"
+            onClick={() => setIsNearbyListOpen((prev) => !prev)}
+            className={`pointer-events-auto inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium shadow-lg backdrop-blur-md transition-colors ${
+              isNearbyListOpen
+                ? 'border-blue-200 bg-blue-50/90 text-blue-700'
+                : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+            }`}
+            aria-pressed={isNearbyListOpen}
+          >
+            <List className="h-4 w-4" />
+            <span>{isNearbyListOpen ? 'Hide nearby' : 'Show nearby'}</span>
+          </button>
+        </div>
+      )}
+
       {hasStations && (
-        <div className="pointer-events-auto absolute bottom-24 left-3 right-3 z-20 sm:bottom-6 sm:left-auto sm:right-6">
+        <div className="pointer-events-auto absolute bottom-24 left-3 right-3 z-20 hidden sm:block sm:bottom-6 sm:left-auto sm:right-6">
           <div className="mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md sm:mx-0 sm:w-auto sm:max-w-none">
             <h3 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-gray-500">
               Price Guide
@@ -699,6 +817,15 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         </div>
       )}
 
+      {noViewportStationsMessage && (
+        <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
+          <div className="pointer-events-auto w-full max-w-md rounded-3xl border border-gray-100 bg-white/90 p-6 text-center shadow-xl backdrop-blur-md">
+            <h2 className="text-xl font-semibold tracking-tight text-gray-900">No stations in view</h2>
+            <p className="mt-3 text-sm leading-relaxed text-gray-500">{noViewportStationsMessage}</p>
+          </div>
+        </div>
+      )}
+
       {loadingStation && (
         <div className="absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 rounded-full border border-gray-100 bg-white/80 px-5 py-3 text-sm font-medium text-gray-700 shadow-xl backdrop-blur-md transition-all">
           <div className="flex h-5 w-5 items-center justify-center">
@@ -720,8 +847,14 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       <StationDrawer
         station={selectedStation}
         isOpen={isDrawerOpen}
-        onClose={() => setIsDrawerOpen(false)}
+        onClose={() => {
+          setIsDrawerOpen(false);
+          setActiveStationId(null);
+          setSelectedStation(null);
+          setStationDetailError(null);
+        }}
         fuelType={fuelType}
+        focusLocation={focusLocation}
       />
     </div>
   );
