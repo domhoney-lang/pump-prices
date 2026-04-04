@@ -4,7 +4,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { MapPin, Navigation } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
-import type { StationMapRecord } from '@/app/actions/stations';
+import type { PriceBenchmark, StationMapRecord } from '@/app/actions/stations';
 import { getPriceScale, getPriceTextClassName, getPriceTone } from '@/lib/price-colors';
 
 type FocusLocation = {
@@ -15,6 +15,7 @@ type FocusLocation = {
 interface NearbyStationsListProps {
   stations: StationMapRecord[];
   fuelType: 'unleaded' | 'diesel';
+  priceBenchmark: PriceBenchmark | null;
   listOrigin: FocusLocation | null;
   loading: boolean;
   selectedStationId: string | null;
@@ -94,6 +95,7 @@ function getDirectionsUrl(lat: number, lng: number) {
 export default function NearbyStationsList({
   stations,
   fuelType,
+  priceBenchmark,
   listOrigin,
   loading,
   selectedStationId,
@@ -102,6 +104,10 @@ export default function NearbyStationsList({
 }: NearbyStationsListProps) {
   const [sortMode, setSortMode] = useState<NearbySortMode>('cheapest');
   const priceScale = useMemo(() => {
+    if (priceBenchmark) {
+      return priceBenchmark.fuelScales[fuelType];
+    }
+
     const normalizedFuelType = fuelType.toLowerCase();
 
     return getPriceScale(
@@ -116,7 +122,7 @@ export default function NearbyStationsList({
         return latestCurrentPrice?.price ?? fallbackPrice?.price;
       }),
     );
-  }, [fuelType, stations]);
+  }, [fuelType, priceBenchmark, stations]);
 
   const nearbyStations = useMemo<NearbyStationListItem[]>(() => {
     if (!listOrigin) {
@@ -230,7 +236,7 @@ export default function NearbyStationsList({
           <p className="mt-1 text-sm text-gray-500">
             {sortMode === 'nearest'
               ? 'Sorted by nearest to the map center'
-              : 'Sorted by cheapest in the current map area'}
+              : 'Sorted by cheapest nearby'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -269,14 +275,14 @@ export default function NearbyStationsList({
         </div>
       ) : nearbyStations.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-          No stations in the current map area. Try zooming out or moving the map.
+          No stations in the current nearby area. Try zooming out or moving the map.
         </div>
       ) : (
         <>
           {noPricesForFuel && (
             <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-              Nearby stations were found, but none currently have {fuelType} prices in the loaded
-              map area.
+              Nearby stations were found, but none currently have {fuelType} prices in the nearby
+              benchmark area.
             </div>
           )}
 

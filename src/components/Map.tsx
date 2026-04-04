@@ -5,7 +5,7 @@ import { CircleMarker, MapContainer, Marker, TileLayer, useMap, useMapEvents } f
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
-import type { StationBoundsInput, StationMapRecord } from '@/app/actions/stations';
+import type { PriceBenchmark, StationBoundsInput, StationMapRecord } from '@/app/actions/stations';
 import { getMapPriceColorClasses, getPriceScale, getPriceTone } from '@/lib/price-colors';
 
 // Fix for default marker icons in Leaflet with Webpack
@@ -23,6 +23,7 @@ L.Icon.Default.mergeOptions({
 interface MapProps {
   stations: StationMapRecord[];
   fuelType: 'unleaded' | 'diesel';
+  priceBenchmark: PriceBenchmark | null;
   mapFocusLocation: { lat: number; lng: number; zoom?: number } | null;
   userLocation: { lat: number; lng: number } | null;
   selectedStationId: string | null;
@@ -265,6 +266,7 @@ const searchPinIcon = createSearchPinIcon();
 export default function Map({
   stations,
   fuelType,
+  priceBenchmark,
   mapFocusLocation,
   userLocation,
   selectedStationId,
@@ -294,10 +296,13 @@ export default function Map({
   const shouldClusterMarkers =
     stations.length > CLUSTER_STATION_THRESHOLD && mapZoom < CLUSTER_ZOOM_THRESHOLD;
 
-  const priceScale = useMemo(
-    () => getPriceScale(stationPrices.map((entry) => entry.latestPrice)),
-    [stationPrices],
-  );
+  const priceScale = useMemo(() => {
+    if (priceBenchmark) {
+      return priceBenchmark.fuelScales[fuelType];
+    }
+
+    return getPriceScale(stationPrices.map((entry) => entry.latestPrice));
+  }, [fuelType, priceBenchmark, stationPrices]);
 
   const createCustomIcon = useCallback((
     price: number | undefined,

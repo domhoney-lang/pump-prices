@@ -15,6 +15,8 @@ export default async function Home() {
         initialIsCapped={initialData.isCapped}
         stationLimit={initialData.stationLimit}
         initialSelectionMode={initialData.selectionMode}
+        initialPriceBenchmark={initialData.priceBenchmark}
+        initialBestNearby={initialData.bestNearby}
       />
     </main>
   );

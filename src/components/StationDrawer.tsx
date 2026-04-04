@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { format, formatDistanceToNow, subDays } from 'date-fns';
 import { MapPin, Navigation, X } from 'lucide-react';
 
-import type { StationDetailRecord, StationMapRecord } from '@/app/actions/stations';
+import type { PriceBenchmark, StationDetailRecord, StationMapRecord } from '@/app/actions/stations';
 import {
   getPriceScale,
   getPriceSurfaceClassName,
@@ -24,6 +24,7 @@ interface StationDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   fuelType: 'unleaded' | 'diesel';
+  priceBenchmark: PriceBenchmark | null;
   focusLocation: FocusLocation | null;
 }
 
@@ -90,6 +91,7 @@ export default function StationDrawer({
   isOpen,
   onClose,
   fuelType,
+  priceBenchmark,
   focusLocation,
 }: StationDrawerProps) {
   if (!station) return null;
@@ -111,18 +113,20 @@ export default function StationDrawer({
   );
   const latestHistoricalPrice = relevantPrices.at(-1)?.price ?? null;
   const latestPrice = latestCurrentPrice?.price ?? latestHistoricalPrice;
-  const priceScale = getPriceScale(
-    stations.map((mapStation) => {
-      const currentPrice = mapStation.currentPrices.find(
-        (price) => price.fuelType === fuelType.toLowerCase(),
-      );
-      const fallbackPrice = mapStation.fallbackPrices.find(
-        (price) => price.fuelType === fuelType.toLowerCase(),
-      );
+  const priceScale =
+    priceBenchmark?.fuelScales[fuelType] ??
+    getPriceScale(
+      stations.map((mapStation) => {
+        const currentPrice = mapStation.currentPrices.find(
+          (price) => price.fuelType === fuelType.toLowerCase(),
+        );
+        const fallbackPrice = mapStation.fallbackPrices.find(
+          (price) => price.fuelType === fuelType.toLowerCase(),
+        );
 
-      return currentPrice?.price ?? fallbackPrice?.price;
-    }),
-  );
+        return currentPrice?.price ?? fallbackPrice?.price;
+      }),
+    );
   const priceTone = getPriceTone(latestPrice, priceScale);
   const freshnessTimestamp = latestCurrentPrice?.timestamp
     ? new Date(latestCurrentPrice.timestamp)

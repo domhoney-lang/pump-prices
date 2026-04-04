@@ -18,8 +18,10 @@ import {
   type LocationSearchResult,
 } from '@/app/actions/locations';
 import {
+  type BestNearby,
   getStationDetails,
   getStationsInBounds,
+  type PriceBenchmark,
   type StationBoundsInput,
   type StationDetailRecord,
   type StationMapRecord,
@@ -43,6 +45,8 @@ interface ClientMapProps {
   initialIsCapped: boolean;
   stationLimit: number;
   initialSelectionMode: 'recent' | 'nearest' | 'spread';
+  initialPriceBenchmark?: PriceBenchmark | null;
+  initialBestNearby?: BestNearby | null;
 }
 
 type UserLocation = {
@@ -62,6 +66,7 @@ type ErrorBanner = {
 
 const FOCUS_REFRESH_COOLDOWN_MS = 60_000;
 const LOCATION_SUGGESTION_DEBOUNCE_MS = 250;
+const BENCHMARK_REUSE_RADIUS_MILES = 0.75;
 const USER_LOCATION_ACTIVE_RADIUS_MILES = 0.25;
 const USER_LOCATION_FOCUS_ZOOM = 13;
 
@@ -81,6 +86,46 @@ function getDistanceMiles(origin: UserLocation, destination: UserLocation) {
     Math.cos(originLat) * Math.cos(destinationLat) * Math.sin(lngDelta / 2) ** 2;
 
   return 2 * earthRadiusMiles * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+}
+
+function getCompassDirection(origin: UserLocation, destination: UserLocation) {
+  const latDelta = destination.lat - origin.lat;
+  const lngDelta = destination.lng - origin.lng;
+  const northSouth = latDelta >= 0 ? 'north' : 'south';
+  const eastWest = lngDelta >= 0 ? 'east' : 'west';
+  const latMagnitude = Math.abs(latDelta);
+  const lngMagnitude = Math.abs(lngDelta);
+
+  if (latMagnitude < 0.005) {
+    return eastWest;
+  }
+
+  if (lngMagnitude < 0.005) {
+    return northSouth;
+  }
+
+  return `${northSouth}-${eastWest}`;
+}
+
+function getDirectionArrow(direction: string) {
+  switch (direction) {
+    case 'north':
+      return '↑';
+    case 'north-east':
+      return '↗';
+    case 'east':
+      return '→';
+    case 'south-east':
+      return '↘';
+    case 'south':
+      return '↓';
+    case 'south-west':
+      return '↙';
+    case 'west':
+      return '←';
+    default:
+      return '↖';
+  }
 }
 
 function getGeolocationErrorMessage(error: GeolocationPositionError) {
@@ -107,6 +152,8 @@ export default function ClientMap({
   initialIsCapped,
   stationLimit,
   initialSelectionMode,
+  initialPriceBenchmark = null,
+  initialBestNearby = null,
 }: ClientMapProps) {
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
@@ -139,6 +186,8 @@ export default function ClientMap({
     initialIsCapped && initialMatchingStationCount !== totalStationCount,
   );
   const [stationSelectionMode, setStationSelectionMode] = useState(initialSelectionMode);
+  const [priceBenchmark, setPriceBenchmark] = useState<PriceBenchmark | null>(initialPriceBenchmark);
+  const [bestNearby, setBestNearby] = useState<BestNearby | null>(initialBestNearby);
   const lastBoundsKeyRef = useRef<string | null>(null);
   const lastBoundsRef = useRef<StationBoundsInput | null>(null);
   const viewportRequestIdRef = useRef(0);
@@ -150,6 +199,16 @@ export default function ClientMap({
 
   const hasStations = stations.length > 0;
   const hasAnyStationData = stationCatalogCount > 0;
+  const activeBestNearby = bestNearby?.[fuelType] ?? null;
+  const showOffscreenBestNearbyAlert =
+    activeBestNearby !== null && !activeBestNearby.inViewport && !loadingStations;
+  const bestNearbyDirection =
+    activeBestNearby && viewportCenter
+      ? getCompassDirection(viewportCenter, {
+          lat: activeBestNearby.lat,
+          lng: activeBestNearby.lng,
+        })
+      : null;
   const isFocusedOnUserLocation =
     userLocation !== null &&
     viewportCenter !== null &&
@@ -244,9 +303,13 @@ export default function ClientMap({
     setStationCatalogCount(totalStationCount);
     setIsStationResultsCapped(initialIsCapped && initialMatchingStationCount !== totalStationCount);
     setStationSelectionMode(initialSelectionMode);
+    setPriceBenchmark(initialPriceBenchmark);
+    setBestNearby(initialBestNearby);
   }, [
     initialIsCapped,
+    initialBestNearby,
     initialMatchingStationCount,
+    initialPriceBenchmark,
     initialSelectionMode,
     initialStations,
     totalStationCount,
@@ -552,6 +615,12 @@ export default function ClientMap({
           setMatchingStationCount(result.matchingStationCount);
           setIsStationResultsCapped(result.isCapped);
           setStationSelectionMode(result.selectionMode);
+          if (result.priceBenchmark) {
+            setPriceBenchmark(result.priceBenchmark);
+          }
+          if (result.bestNearby) {
+            setBestNearby(result.bestNearby);
+          }
         })
         .catch((error) => {
           if (requestId !== viewportRequestIdRef.current) {
@@ -595,12 +664,26 @@ export default function ClientMap({
     }
 
     lastBoundsKeyRef.current = boundsKey;
+    const shouldRefreshBenchmark =
+      !priceBenchmark ||
+      getDistanceMiles(
+        {
+          lat: priceBenchmark.anchorLat,
+          lng: priceBenchmark.anchorLng,
+        },
+        {
+          lat: bounds.centerLat,
+          lng: bounds.centerLng,
+        },
+      ) > BENCHMARK_REUSE_RADIUS_MILES;
     const requestId = ++viewportRequestIdRef.current;
     setLoadingStations(true);
     setStationLoadError(null);
 
     try {
-      const result = await getStationsInBounds(bounds);
+      const result = await getStationsInBounds(bounds, {
+        includeNearbyBenchmark: shouldRefreshBenchmark,
+      });
       if (requestId !== viewportRequestIdRef.current) {
         return;
       }
@@ -610,6 +693,12 @@ export default function ClientMap({
       setMatchingStationCount(result.matchingStationCount);
       setIsStationResultsCapped(result.isCapped);
       setStationSelectionMode(result.selectionMode);
+      if (result.priceBenchmark) {
+        setPriceBenchmark(result.priceBenchmark);
+      }
+      if (result.bestNearby) {
+        setBestNearby(result.bestNearby);
+      }
     } catch (error) {
       if (requestId !== viewportRequestIdRef.current) {
         return;
@@ -622,7 +711,20 @@ export default function ClientMap({
         setLoadingStations(false);
       }
     }
-  }, []);
+  }, [priceBenchmark]);
+
+  const handleShowBestNearby = useCallback(() => {
+    if (!activeBestNearby) {
+      return;
+    }
+
+    setMapFocusLocation({
+      lat: activeBestNearby.lat,
+      lng: activeBestNearby.lng,
+      zoom: 14,
+    });
+    setMapFocusLabel(`${activeBestNearby.brand || 'Nearby station'} (${fuelType})`);
+  }, [activeBestNearby, fuelType]);
 
   return (
     <div className="relative h-full w-full">
@@ -793,12 +895,44 @@ export default function ClientMap({
               {cappedStationsMessage}
             </div>
           )}
+
+          {showOffscreenBestNearbyAlert && activeBestNearby && (
+            <div className="pointer-events-auto rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="min-w-0">
+                  Best nearby {fuelType} is{' '}
+                  <span className="font-semibold">{activeBestNearby.price.toFixed(1)}p</span> at{' '}
+                  <span className="font-semibold">{activeBestNearby.brand || 'Unknown Brand'}</span>,
+                  {' '}
+                  {activeBestNearby.distanceMiles < 10
+                    ? `${activeBestNearby.distanceMiles.toFixed(1)} mi away`
+                    : `${Math.round(activeBestNearby.distanceMiles)} mi away`}
+                  {bestNearbyDirection ? (
+                    <>
+                      , <span className="font-semibold">{getDirectionArrow(bestNearbyDirection)}</span>{' '}
+                      just {bestNearbyDirection} of this view.
+                    </>
+                  ) : (
+                    ', just outside this view.'
+                  )}
+                </p>
+                <button
+                  type="button"
+                  onClick={handleShowBestNearby}
+                  className="inline-flex shrink-0 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
+                >
+                  Show on map
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
       <MapComponent
         stations={stations}
         fuelType={fuelType}
+        priceBenchmark={priceBenchmark}
         mapFocusLocation={mapFocusLocation}
         userLocation={userLocation}
         selectedStationId={activeStationId}
@@ -809,6 +943,7 @@ export default function ClientMap({
       <NearbyStationsList
         stations={stations}
         fuelType={fuelType}
+        priceBenchmark={priceBenchmark}
         listOrigin={viewportCenter}
         loading={loadingStations}
         selectedStationId={activeStationId}
@@ -828,7 +963,7 @@ export default function ClientMap({
               <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                   <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
-                  <span className="truncate text-xs font-medium text-gray-700">Cheapest 20%</span>
+                  <span className="truncate text-xs font-medium text-gray-700">Cheapest nearby</span>
                 </div>
                 <div className="flex min-w-0 items-center gap-2">
                   <div className="h-3 w-3 shrink-0 rounded-full bg-amber-500"></div>
@@ -934,7 +1069,7 @@ export default function ClientMap({
               <div className="flex min-w-0 items-center gap-2">
                 <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
                 <span className="truncate text-xs font-medium text-gray-700 sm:text-sm">
-                  Cheapest 20%
+                  Cheapest nearby
                 </span>
               </div>
               <div className="flex min-w-0 items-center gap-2">
@@ -1007,6 +1142,7 @@ export default function ClientMap({
           setStationDetailError(null);
         }}
         fuelType={fuelType}
+        priceBenchmark={priceBenchmark}
         focusLocation={distanceReferenceLocation}
       />
     </div>

@@ -2,11 +2,13 @@
 
 import { Prisma } from '@prisma/client';
 
+import { getPriceScale } from '@/lib/price-colors';
 import { prisma } from '@/lib/prisma';
 import { normalizeUkStationCoordinates } from '@/lib/station-coordinates';
 
 const MAP_STATION_LIMIT = 500;
 const MAP_FALLBACK_PRICE_WINDOW = 6;
+const NEARBY_BENCHMARK_RADIUS_MILES = 5;
 const stationMapSelect = {
   id: true,
   brand: true,
@@ -72,6 +74,30 @@ export type StationDetailRecord = Prisma.StationGetPayload<{
   include: typeof stationDetailInclude;
 }>;
 
+type FuelPriceScale = ReturnType<typeof getPriceScale>;
+
+type FuelType = 'unleaded' | 'diesel';
+
+export type PriceBenchmark = {
+  anchorLat: number;
+  anchorLng: number;
+  radiusMiles: number;
+  stationCount: number;
+  fuelScales: Record<FuelType, FuelPriceScale>;
+};
+
+type BestNearbyFuelStation = {
+  stationId: string;
+  brand: string | null;
+  lat: number;
+  lng: number;
+  price: number;
+  distanceMiles: number;
+  inViewport: boolean;
+};
+
+export type BestNearby = Record<FuelType, BestNearbyFuelStation | null>;
+
 export type StationsPageData = {
   stations: StationMapRecord[];
   totalStationCount: number;
@@ -80,6 +106,8 @@ export type StationsPageData = {
   stationLimit: number;
   isCapped: boolean;
   selectionMode: 'recent' | 'nearest' | 'spread';
+  priceBenchmark?: PriceBenchmark | null;
+  bestNearby?: BestNearby | null;
 };
 
 export type StationBoundsInput = {
@@ -89,6 +117,10 @@ export type StationBoundsInput = {
   east: number;
   centerLat: number;
   centerLng: number;
+};
+
+type StationQueryOptions = {
+  includeNearbyBenchmark?: boolean;
 };
 
 function buildBoundsWhere(bounds?: StationBoundsInput): Prisma.StationWhereInput | undefined {
@@ -167,6 +199,27 @@ function getDistanceScore(
   candidate: Pick<StationCandidateRecord, 'lat' | 'lng'>,
 ) {
   return (candidate.lat - origin.centerLat) ** 2 + (candidate.lng - origin.centerLng) ** 2;
+}
+
+function toRadians(value: number) {
+  return (value * Math.PI) / 180;
+}
+
+function getDistanceMiles(
+  origin: { lat: number; lng: number },
+  destination: { lat: number; lng: number },
+) {
+  const earthRadiusMiles = 3958.8;
+  const latDelta = toRadians(destination.lat - origin.lat);
+  const lngDelta = toRadians(destination.lng - origin.lng);
+  const originLat = toRadians(origin.lat);
+  const destinationLat = toRadians(destination.lat);
+
+  const haversine =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(originLat) * Math.cos(destinationLat) * Math.sin(lngDelta / 2) ** 2;
+
+  return 2 * earthRadiusMiles * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
 function sortCandidatesByRecency(candidates: StationCandidateRecord[]) {
@@ -305,7 +358,146 @@ function toStationMapRecord(station: StationMapQueryRecord): StationMapRecord | 
   };
 }
 
-async function loadStations(bounds?: StationBoundsInput) {
+function getFuelPrice(station: StationMapRecord, fuelType: FuelType) {
+  const currentPrice = station.currentPrices.find((price) => price.fuelType === fuelType)?.price;
+
+  if (typeof currentPrice === 'number') {
+    return currentPrice;
+  }
+
+  return station.fallbackPrices.find((price) => price.fuelType === fuelType)?.price;
+}
+
+function getRadiusBounds(centerLat: number, centerLng: number, radiusMiles: number): StationBoundsInput {
+  const milesPerLatDegree = 69;
+  const latDelta = radiusMiles / milesPerLatDegree;
+  const cosine = Math.max(Math.cos(toRadians(centerLat)), 0.01);
+  const lngDelta = radiusMiles / (milesPerLatDegree * cosine);
+
+  return {
+    south: centerLat - latDelta,
+    west: centerLng - lngDelta,
+    north: centerLat + latDelta,
+    east: centerLng + lngDelta,
+    centerLat,
+    centerLng,
+  };
+}
+
+function isPointInBounds(
+  station: Pick<StationMapRecord, 'lat' | 'lng'>,
+  bounds: Pick<StationBoundsInput, 'south' | 'west' | 'north' | 'east'>,
+) {
+  return (
+    station.lat >= bounds.south &&
+    station.lat <= bounds.north &&
+    station.lng >= bounds.west &&
+    station.lng <= bounds.east
+  );
+}
+
+function buildBestNearbyForFuel(
+  stations: StationMapRecord[],
+  fuelType: FuelType,
+  anchor: { lat: number; lng: number },
+  bounds: Pick<StationBoundsInput, 'south' | 'west' | 'north' | 'east'>,
+): BestNearbyFuelStation | null {
+  const candidates = stations
+    .map((station) => {
+      const price = getFuelPrice(station, fuelType);
+
+      if (typeof price !== 'number') {
+        return null;
+      }
+
+      return {
+        station,
+        price,
+        distanceMiles: getDistanceMiles(anchor, station),
+      };
+    })
+    .filter(
+      (
+        station,
+      ): station is {
+        station: StationMapRecord;
+        price: number;
+        distanceMiles: number;
+      } => station !== null,
+    )
+    .sort((left, right) => {
+      if (left.price !== right.price) {
+        return left.price - right.price;
+      }
+
+      if (left.distanceMiles !== right.distanceMiles) {
+        return left.distanceMiles - right.distanceMiles;
+      }
+
+      return left.station.id.localeCompare(right.station.id);
+    });
+
+  const bestStation = candidates[0];
+
+  if (!bestStation) {
+    return null;
+  }
+
+  return {
+    stationId: bestStation.station.id,
+    brand: bestStation.station.brand,
+    lat: bestStation.station.lat,
+    lng: bestStation.station.lng,
+    price: bestStation.price,
+    distanceMiles: bestStation.distanceMiles,
+    inViewport: isPointInBounds(bestStation.station, bounds),
+  };
+}
+
+async function buildNearbyBenchmark(bounds: StationBoundsInput) {
+  const anchor = {
+    lat: bounds.centerLat,
+    lng: bounds.centerLng,
+  };
+  const radiusBounds = getRadiusBounds(
+    bounds.centerLat,
+    bounds.centerLng,
+    NEARBY_BENCHMARK_RADIUS_MILES,
+  );
+  const nearbyRows = await prisma.station.findMany({
+    where: buildBoundsWhere(radiusBounds),
+    select: stationMapSelect,
+  });
+  const nearbyStations = nearbyRows
+    .map(toStationMapRecord)
+    .filter((station): station is StationMapRecord => station !== null)
+    .filter(
+      (station) => getDistanceMiles(anchor, station) <= NEARBY_BENCHMARK_RADIUS_MILES,
+    );
+
+  return {
+    priceBenchmark: {
+      anchorLat: bounds.centerLat,
+      anchorLng: bounds.centerLng,
+      radiusMiles: NEARBY_BENCHMARK_RADIUS_MILES,
+      stationCount: nearbyStations.length,
+      fuelScales: {
+        unleaded: getPriceScale(
+          nearbyStations.map((station) => getFuelPrice(station, 'unleaded')),
+        ),
+        diesel: getPriceScale(
+          nearbyStations.map((station) => getFuelPrice(station, 'diesel')),
+        ),
+      },
+    } satisfies PriceBenchmark,
+    bestNearby: {
+      unleaded: buildBestNearbyForFuel(nearbyStations, 'unleaded', anchor, bounds),
+      diesel: buildBestNearbyForFuel(nearbyStations, 'diesel', anchor, bounds),
+    } satisfies BestNearby,
+  };
+}
+
+async function loadStations(bounds?: StationBoundsInput, options?: StationQueryOptions) {
   const where = buildBoundsWhere(bounds);
   const [totalStationCount, matchingStationCount] = await prisma.$transaction([
     prisma.station.count(),
@@ -389,6 +581,10 @@ async function loadStations(bounds?: StationBoundsInput) {
   const stations = stationIds
     .map((stationId) => stationsById.get(stationId))
     .filter((station): station is StationMapRecord => station !== undefined);
+  const nearbyBenchmarkData =
+    bounds && options?.includeNearbyBenchmark !== false
+      ? await buildNearbyBenchmark(bounds)
+      : null;
 
   return {
     stations,
@@ -398,6 +594,8 @@ async function loadStations(bounds?: StationBoundsInput) {
     stationLimit: MAP_STATION_LIMIT,
     isCapped: matchingStationCount > stations.length,
     selectionMode,
+    priceBenchmark: nearbyBenchmarkData?.priceBenchmark,
+    bestNearby: nearbyBenchmarkData?.bestNearby,
   } satisfies StationsPageData;
 }
 
@@ -405,8 +603,8 @@ export async function getStations() {
   return loadStations();
 }
 
-export async function getStationsInBounds(bounds: StationBoundsInput) {
-  return loadStations(bounds);
+export async function getStationsInBounds(bounds: StationBoundsInput, options?: StationQueryOptions) {
+  return loadStations(bounds, options);
 }
 
 export async function getStationDetails(id: string): Promise<StationDetailRecord | null> {
