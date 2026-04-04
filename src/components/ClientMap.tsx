@@ -150,7 +150,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     }
   }, []);
 
-  const requestUserLocation = useCallback((options?: { silent?: boolean }) => {
+  const requestUserLocation = useCallback((options?: { silent?: boolean; enableHighAccuracy?: boolean }) => {
     if (!navigator.geolocation) {
       if (!options?.silent) {
         setSyncError('Geolocation is not supported by this browser.');
@@ -158,9 +158,16 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       return;
     }
 
-    setIsLocating(true);
-    if (!options?.silent) {
-      setSyncError(null);
+    // Prefer a coarse lookup first because mobile browsers can often resolve it
+    // faster and more reliably than a GPS-grade fix.
+    const isHighAccuracy = options?.enableHighAccuracy ?? false;
+
+    // Only set loading state on the first attempt.
+    if (!isHighAccuracy) {
+      setIsLocating(true);
+      if (!options?.silent) {
+        setSyncError(null);
+      }
     }
 
     navigator.geolocation.getCurrentPosition(
@@ -173,6 +180,16 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         setIsLocating(false);
       },
       (error) => {
+        // If the coarse lookup fails, retry once with high accuracy.
+        if (
+          !isHighAccuracy &&
+          (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT)
+        ) {
+          console.warn('Coarse geolocation failed, retrying with high accuracy...', error.message);
+          requestUserLocation({ ...options, enableHighAccuracy: true });
+          return;
+        }
+
         const message = getGeolocationErrorMessage(error);
 
         console.warn('Geolocation lookup failed', {
@@ -187,9 +204,9 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         setIsLocating(false);
       },
       {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 60000,
+        enableHighAccuracy: isHighAccuracy,
+        timeout: isHighAccuracy ? 15000 : 8000,
+        maximumAge: isHighAccuracy ? 60000 : 300000,
       },
     );
   }, []);
@@ -467,7 +484,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
               <div className="flex w-full flex-col gap-2 lg:min-w-[26rem] lg:max-w-xl">
                 <div className="relative">
                   <div className="flex w-full flex-col gap-2">
-                    <div className="flex w-full items-center gap-2 rounded-xl bg-gray-100 p-1">
+                    <div className="hidden w-full items-center gap-2 rounded-xl bg-gray-100 p-1 sm:flex">
                       <span className="pl-2 pr-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
                         Fuel
                       </span>
@@ -498,7 +515,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
                         type="button"
                         onClick={handleLocateUser}
                         disabled={isLocating}
-                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="hidden shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:inline-flex"
                         title="Use my location"
                       >
                         <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
@@ -601,8 +618,44 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         onViewportChange={handleViewportChange}
       />
 
+      {/* Mobile Bottom Controls */}
+      <div className="pointer-events-none absolute bottom-6 left-3 right-3 z-20 flex gap-3 sm:hidden">
+        <div className="pointer-events-auto flex flex-1 items-center gap-1 rounded-2xl border border-gray-100 bg-white/95 p-1.5 shadow-lg backdrop-blur-sm">
+          <button
+            onClick={() => setFuelType('unleaded')}
+            className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+              fuelType === 'unleaded'
+                ? 'bg-gray-100 text-gray-900'
+                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+            }`}
+          >
+            Unleaded
+          </button>
+          <button
+            onClick={() => setFuelType('diesel')}
+            className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+              fuelType === 'diesel'
+                ? 'bg-gray-100 text-gray-900'
+                : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+            }`}
+          >
+            Diesel
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleLocateUser}
+          disabled={isLocating}
+          className="pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-white/95 px-4 shadow-lg backdrop-blur-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          title="Use my location"
+        >
+          <LocateFixed className={`h-5 w-5 text-gray-700 ${isLocating ? 'animate-pulse' : ''}`} />
+        </button>
+      </div>
+
       {hasStations && (
-        <div className="pointer-events-auto absolute bottom-20 left-3 right-3 z-20 sm:bottom-6 sm:left-auto sm:right-6">
+        <div className="pointer-events-auto absolute bottom-24 left-3 right-3 z-20 sm:bottom-6 sm:left-auto sm:right-6">
           <div className="mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/95 px-4 py-3 shadow-lg backdrop-blur-sm sm:mx-0 sm:w-auto sm:max-w-none">
             <h3 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-gray-500">
               Price Guide
