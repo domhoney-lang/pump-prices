@@ -5,7 +5,11 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, LocateFixed, RefreshCw, Search } from 'lucide-react';
 
-import { searchLocation } from '@/app/actions/locations';
+import {
+  searchLocation,
+  searchLocations,
+  type LocationSearchResult,
+} from '@/app/actions/locations';
 import {
   getStationDetails,
   getStationsInBounds,
@@ -36,6 +40,7 @@ type UserLocation = {
 };
 
 const FOCUS_REFRESH_COOLDOWN_MS = 60_000;
+const LOCATION_SUGGESTION_DEBOUNCE_MS = 250;
 
 export default function ClientMap({ initialStations, totalStationCount }: ClientMapProps) {
   const router = useRouter();
@@ -47,15 +52,20 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [loadingStations, setLoadingStations] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [focusLocation, setFocusLocation] = useState<UserLocation | null>(null);
   const [focusedLocationLabel, setFocusedLocationLabel] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [locationSuggestions, setLocationSuggestions] = useState<LocationSearchResult[]>([]);
+  const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
+  const [locationSuggestionMessage, setLocationSuggestionMessage] = useState<string | null>(null);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
   const lastBoundsKeyRef = useRef<string | null>(null);
   const viewportRequestIdRef = useRef(0);
+  const suggestionRequestIdRef = useRef(0);
   const hasAttemptedAutoLocateRef = useRef(false);
   const lastAutoRefreshAtRef = useRef(0);
 
@@ -154,6 +164,20 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     requestUserLocation();
   };
 
+  const applyFocusLocation = useCallback((location: LocationSearchResult) => {
+    setFocusLocation({
+      lat: location.lat,
+      lng: location.lng,
+    });
+    setFocusedLocationLabel(location.label);
+    setSearchQuery(location.label);
+    setLocationSuggestions([]);
+    setLocationSuggestionMessage(null);
+    setShowLocationSuggestions(false);
+    setSyncError(null);
+    setSyncMessage(null);
+  }, []);
+
   const handleLocationSearch = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -181,17 +205,17 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         return;
       }
 
-      setFocusLocation({
-        lat: result.result.lat,
-        lng: result.result.lng,
-      });
-      setFocusedLocationLabel(result.result.label);
+      applyFocusLocation(result.result);
     } catch (error) {
       console.error('Failed to search for a location', error);
       setSyncError('Location search is unavailable right now.');
     } finally {
       setIsSearching(false);
     }
+  };
+
+  const handleLocationSuggestionSelect = (location: LocationSearchResult) => {
+    applyFocusLocation(location);
   };
 
   useEffect(() => {
@@ -222,6 +246,59 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         // Ignore unsupported permission-query implementations and keep manual location.
       });
   }, [requestUserLocation]);
+
+  useEffect(() => {
+    const trimmedQuery = searchQuery.trim();
+
+    if (trimmedQuery.length < 2) {
+      suggestionRequestIdRef.current += 1;
+      setLocationSuggestions([]);
+      setLocationSuggestionMessage(null);
+      setIsLoadingSuggestions(false);
+      return;
+    }
+
+    const requestId = ++suggestionRequestIdRef.current;
+    const timeoutId = window.setTimeout(async () => {
+      setIsLoadingSuggestions(true);
+
+      try {
+        const result = await searchLocations(trimmedQuery);
+
+        if (requestId !== suggestionRequestIdRef.current) {
+          return;
+        }
+
+        if (result.error) {
+          setLocationSuggestions([]);
+          setLocationSuggestionMessage(result.error);
+          return;
+        }
+
+        const suggestions = result.results ?? [];
+        setLocationSuggestions(suggestions);
+        setLocationSuggestionMessage(
+          suggestions.length === 0 ? 'No matching address, postcode, or area found.' : null,
+        );
+      } catch (error) {
+        if (requestId !== suggestionRequestIdRef.current) {
+          return;
+        }
+
+        console.error('Failed to load location suggestions', error);
+        setLocationSuggestions([]);
+        setLocationSuggestionMessage('Location suggestions are unavailable right now.');
+      } finally {
+        if (requestId === suggestionRequestIdRef.current) {
+          setIsLoadingSuggestions(false);
+        }
+      }
+    }, LOCATION_SUGGESTION_DEBOUNCE_MS);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [searchQuery]);
 
   useEffect(() => {
     const maybeRefreshOnFocus = () => {
@@ -302,76 +379,111 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
                 </div>
               </div>
 
-              <div className="flex w-full max-w-xl flex-col gap-2 lg:min-w-[26rem]">
-                <form className="flex items-center gap-2" onSubmit={handleLocationSearch}>
-                  <label className="sr-only" htmlFor="location-search">
-                    Search for an address, postcode, or area
-                  </label>
-                  <input
-                    id="location-search"
-                    type="search"
-                    value={searchQuery}
-                    onChange={(event) => setSearchQuery(event.target.value)}
-                    placeholder="Search address, postcode, or area"
-                    autoComplete="street-address"
-                    autoCapitalize="words"
-                    spellCheck={false}
-                    enterKeyHint="search"
-                    className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                  />
-                  <button
-                    type="submit"
-                    disabled={isSearching}
-                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                  >
-                    <Search className={`h-4 w-4 ${isSearching ? 'animate-pulse' : ''}`} />
-                    {isSearching ? 'Searching...' : 'Search'}
-                  </button>
-                </form>
+              <div className="flex w-full flex-col gap-2 lg:min-w-[26rem] lg:max-w-xl">
+                <div className="relative">
+                  <div className="flex w-full flex-col gap-2">
+                    <div className="flex w-full items-center gap-2 rounded-xl bg-gray-100 p-1">
+                      <span className="pl-2 pr-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                        Fuel
+                      </span>
+                      <button
+                        onClick={() => setFuelType('unleaded')}
+                        className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+                          fuelType === 'unleaded'
+                            ? 'bg-white text-gray-900 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Unleaded
+                      </button>
+                      <button
+                        onClick={() => setFuelType('diesel')}
+                        className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+                          fuelType === 'diesel'
+                            ? 'bg-white text-gray-900 shadow-sm'
+                            : 'text-gray-500 hover:text-gray-700'
+                        }`}
+                      >
+                        Diesel
+                      </button>
+                    </div>
+
+                    <form className="flex items-center gap-2" onSubmit={handleLocationSearch}>
+                      <button
+                        type="button"
+                        onClick={handleLocateUser}
+                        disabled={isLocating}
+                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        title="Use my location"
+                      >
+                        <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
+                        <span>{isLocating ? 'Locating...' : 'My location'}</span>
+                      </button>
+
+                      <label className="sr-only" htmlFor="location-search">
+                        Search for an address, postcode, or area
+                      </label>
+                      <input
+                        id="location-search"
+                        type="search"
+                        value={searchQuery}
+                        onChange={(event) => setSearchQuery(event.target.value)}
+                        onFocus={() => setShowLocationSuggestions(true)}
+                        onBlur={() => {
+                          window.setTimeout(() => {
+                            setShowLocationSuggestions(false);
+                          }, 120);
+                        }}
+                        placeholder="Search location"
+                        autoComplete="street-address"
+                        autoCapitalize="words"
+                        spellCheck={false}
+                        enterKeyHint="search"
+                        className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSearching}
+                        className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <Search className={`h-4 w-4 ${isSearching ? 'animate-pulse' : ''}`} />
+                        <span>{isSearching ? 'Searching...' : 'Search'}</span>
+                      </button>
+                    </form>
+                  </div>
+
+                  {showLocationSuggestions && searchQuery.trim().length >= 2 && (
+                    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+                      {isLoadingSuggestions ? (
+                        <div className="px-4 py-3 text-sm text-gray-500">Searching places...</div>
+                      ) : locationSuggestions.length > 0 ? (
+                        <div className="max-h-72 overflow-y-auto py-1">
+                          {locationSuggestions.map((suggestion) => (
+                            <button
+                              key={`${suggestion.lat}:${suggestion.lng}:${suggestion.label}`}
+                              type="button"
+                              onMouseDown={(event) => event.preventDefault()}
+                              onClick={() => handleLocationSuggestionSelect(suggestion)}
+                              className="block w-full px-4 py-3 text-left text-sm text-gray-700 transition-colors hover:bg-blue-50 hover:text-gray-900"
+                            >
+                              <span className="line-clamp-2">{suggestion.label}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : locationSuggestionMessage ? (
+                        <div className="px-4 py-3 text-sm text-gray-500">
+                          {locationSuggestionMessage}
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
 
                 {focusedLocationLabel && (
                   <p className="truncate text-xs text-gray-500">
                     Focused on <span className="font-medium text-gray-700">{focusedLocationLabel}</span>
                   </p>
                 )}
-
-                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex w-full items-center gap-2 rounded-xl bg-gray-100 p-1 sm:w-auto">
-                    <span className="pl-2 pr-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
-                      Fuel
-                    </span>
-                    <button
-                      onClick={() => setFuelType('unleaded')}
-                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
-                        fuelType === 'unleaded'
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Unleaded
-                    </button>
-                    <button
-                      onClick={() => setFuelType('diesel')}
-                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
-                        fuelType === 'diesel'
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-500 hover:text-gray-700'
-                      }`}
-                    >
-                      Diesel
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={handleLocateUser}
-                    disabled={isLocating}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:justify-start"
-                    title="Use my location"
-                  >
-                    <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
-                    {isLocating ? 'Locating...' : 'My location'}
-                  </button>
-                </div>
               </div>
             </div>
           </div>

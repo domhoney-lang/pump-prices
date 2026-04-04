@@ -14,9 +14,10 @@ type LocationSearchResponse = {
   display_name: string;
 };
 
-export async function searchLocation(
+async function fetchLocationMatches(
   query: string,
-): Promise<{ result?: LocationSearchResult; error?: string }> {
+  limit: number,
+): Promise<{ results?: LocationSearchResult[]; error?: string }> {
   const trimmedQuery = query.trim();
 
   if (trimmedQuery.length < 2) {
@@ -28,7 +29,7 @@ export async function searchLocation(
   const searchParams = new URLSearchParams({
     q: trimmedQuery,
     format: 'jsonv2',
-    limit: '1',
+    limit: String(limit),
     countrycodes: 'gb',
     addressdetails: '0',
   });
@@ -49,30 +50,24 @@ export async function searchLocation(
     }
 
     const matches = (await response.json()) as LocationSearchResponse[];
-    const topMatch = matches[0];
+    const results = matches
+      .map((match) => {
+        const lat = Number(match.lat);
+        const lng = Number(match.lon);
 
-    if (!topMatch) {
-      return {
-        error: 'No matching address, postcode, or area was found.',
-      };
-    }
+        if (Number.isNaN(lat) || Number.isNaN(lng)) {
+          return null;
+        }
 
-    const lat = Number(topMatch.lat);
-    const lng = Number(topMatch.lon);
+        return {
+          lat,
+          lng,
+          label: match.display_name,
+        } satisfies LocationSearchResult;
+      })
+      .filter((match): match is LocationSearchResult => match !== null);
 
-    if (Number.isNaN(lat) || Number.isNaN(lng)) {
-      return {
-        error: 'The selected location could not be mapped.',
-      };
-    }
-
-    return {
-      result: {
-        lat,
-        lng,
-        label: topMatch.display_name,
-      },
-    };
+    return { results };
   } catch (error) {
     console.error('Location search failed', error);
 
@@ -80,4 +75,33 @@ export async function searchLocation(
       error: 'Location search is unavailable right now.',
     };
   }
+}
+
+export async function searchLocations(
+  query: string,
+  limit = 5,
+): Promise<{ results?: LocationSearchResult[]; error?: string }> {
+  return fetchLocationMatches(query, Math.max(1, Math.min(limit, 5)));
+}
+
+export async function searchLocation(
+  query: string,
+): Promise<{ result?: LocationSearchResult; error?: string }> {
+  const response = await fetchLocationMatches(query, 1);
+
+  if (response.error) {
+    return response;
+  }
+
+  const topMatch = response.results?.[0];
+
+  if (!topMatch) {
+    return {
+      error: 'No matching address, postcode, or area was found.',
+    };
+  }
+
+  return {
+    result: topMatch,
+  };
 }
