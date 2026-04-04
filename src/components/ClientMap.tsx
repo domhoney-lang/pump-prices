@@ -23,7 +23,7 @@ import StationDrawer from './StationDrawer';
 const MapComponent = dynamic(async () => (await import('./Map')).default, {
   ssr: false,
   loading: () => (
-    <div className="absolute inset-0 z-0 flex h-screen w-full items-center justify-center bg-gray-50">
+    <div className="absolute inset-0 z-0 flex h-dvh w-full items-center justify-center bg-gray-50">
       Loading map...
     </div>
   ),

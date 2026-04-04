@@ -7,7 +7,7 @@ export default async function Home() {
   const initialData = await getStations();
 
   return (
-    <main className="h-screen w-full relative">
+    <main className="h-dvh w-full relative">
       <ClientMap initialStations={initialData.stations} totalStationCount={initialData.totalStationCount} />
     </main>
   );
