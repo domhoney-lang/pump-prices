@@ -130,8 +130,10 @@ export default function Map({
 
   let cheapThreshold = 0;
   let expensiveThreshold = Infinity;
+  let absoluteCheapestPrice: number | null = null;
 
   if (validPrices.length > 0) {
+    absoluteCheapestPrice = validPrices[0];
     const cheapIndex = Math.floor(validPrices.length * 0.2); // Bottom 20%
     const expensiveIndex = Math.floor(validPrices.length * 0.8); // Top 20%
     
@@ -153,7 +155,7 @@ export default function Map({
     return { bg: 'bg-amber-500', hoverBg: 'group-hover:bg-amber-600', border: 'border-t-amber-500', hoverBorder: 'group-hover:border-t-amber-600', ring: 'bg-amber-500/30' };
   };
 
-  const createCustomIcon = (price: number | undefined) => {
+  const createCustomIcon = (price: number | undefined, isCheapest: boolean) => {
     const priceText = price ? `${price.toFixed(1)}p` : 'N/A';
     const width = Math.max(48, priceText.length * 10 + 20);
     const height = 30;
@@ -162,6 +164,7 @@ export default function Map({
     return L.divIcon({
       className: 'custom-marker',
       html: `<div class="relative group cursor-pointer drop-shadow-md">
+               ${isCheapest ? `<div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10 tracking-widest whitespace-nowrap border border-amber-300">BEST</div>` : ''}
                <div class="absolute -inset-1 ${colors.ring} rounded-full blur-sm opacity-0 group-hover:opacity-100 transition-opacity"></div>
                <div class="relative ${colors.bg} text-white font-bold px-2.5 py-1 rounded-full text-sm whitespace-nowrap border-2 border-white ${colors.hoverBg} transition-colors flex items-center justify-center">
                  ${priceText}
@@ -208,12 +211,13 @@ export default function Map({
             (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
           )?.price;
           const latestPrice = latestCurrentPrice ?? fallbackPrice;
+          const isCheapest = latestPrice !== undefined && latestPrice === absoluteCheapestPrice;
 
           return (
             <Marker
               key={station.id}
               position={[station.lat, station.lng]}
-              icon={createCustomIcon(latestPrice)}
+              icon={createCustomIcon(latestPrice, isCheapest)}
               eventHandlers={{
                 click: () => onStationSelect(station.id),
               }}
