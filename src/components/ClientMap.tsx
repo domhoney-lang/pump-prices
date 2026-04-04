@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Fuel, LocateFixed, RefreshCw } from 'lucide-react';
+import { Fuel, LocateFixed, RefreshCw, Search } from 'lucide-react';
 
+import { searchLocation } from '@/app/actions/locations';
 import {
   getStationDetails,
   getStationsInBounds,
@@ -45,8 +46,11 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [loadingStation, setLoadingStation] = useState(false);
   const [loadingStations, setLoadingStations] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [userLocation, setUserLocation] = useState<UserLocation | null>(null);
+  const [focusLocation, setFocusLocation] = useState<UserLocation | null>(null);
+  const [focusedLocationLabel, setFocusedLocationLabel] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
@@ -120,10 +124,11 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        setUserLocation({
+        setFocusLocation({
           lat: position.coords.latitude,
           lng: position.coords.longitude,
         });
+        setFocusedLocationLabel('Your location');
         setIsLocating(false);
       },
       (error) => {
@@ -147,6 +152,46 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
   const handleLocateUser = () => {
     requestUserLocation();
+  };
+
+  const handleLocationSearch = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    const trimmedQuery = searchQuery.trim();
+
+    if (trimmedQuery.length < 2) {
+      setSyncError('Enter at least 2 characters to search.');
+      return;
+    }
+
+    setIsSearching(true);
+    setSyncError(null);
+    setSyncMessage(null);
+
+    try {
+      const result = await searchLocation(trimmedQuery);
+
+      if (result.error) {
+        setSyncError(result.error);
+        return;
+      }
+
+      if (!result.result) {
+        setSyncError('No matching address, postcode, or area was found.');
+        return;
+      }
+
+      setFocusLocation({
+        lat: result.result.lat,
+        lng: result.result.lng,
+      });
+      setFocusedLocationLabel(result.result.label);
+    } catch (error) {
+      console.error('Failed to search for a location', error);
+      setSyncError('Location search is unavailable right now.');
+    } finally {
+      setIsSearching(false);
+    }
   };
 
   useEffect(() => {
@@ -245,53 +290,89 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     <div className="relative h-full w-full">
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 px-3 pb-4 pt-3 sm:p-4">
         <div className="mx-auto flex max-w-4xl flex-col gap-3">
-          <div className="pointer-events-auto flex flex-col gap-4 rounded-2xl border border-gray-100 bg-white p-3 shadow-lg sm:flex-row sm:items-center sm:justify-between sm:p-4">
-            <div className="flex items-start gap-3">
-              <div className="rounded-lg bg-blue-100 p-2">
-                <Fuel className="h-5 w-5 text-blue-600" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="font-bold text-gray-900">UK Fuel Prices</h1>
-                <p className="text-sm text-gray-500">{stationSummary}</p>
-              </div>
-            </div>
-
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
-              <div className="flex w-full items-center gap-2 rounded-xl bg-gray-100 p-1 sm:w-auto">
-                <span className="pl-2 pr-1 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                  Fuel
-                </span>
-                <button
-                  onClick={() => setFuelType('unleaded')}
-                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
-                    fuelType === 'unleaded'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Unleaded
-                </button>
-                <button
-                  onClick={() => setFuelType('diesel')}
-                  className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
-                    fuelType === 'diesel'
-                      ? 'bg-white text-gray-900 shadow-sm'
-                      : 'text-gray-500 hover:text-gray-700'
-                  }`}
-                >
-                  Diesel
-                </button>
+          <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white p-3 shadow-lg sm:p-4">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="flex items-start gap-3">
+                <div className="rounded-lg bg-blue-100 p-2">
+                  <Fuel className="h-5 w-5 text-blue-600" />
+                </div>
+                <div className="min-w-0">
+                  <h1 className="font-bold text-gray-900">UK Fuel Prices</h1>
+                  <p className="text-sm text-gray-500">{stationSummary}</p>
+                </div>
               </div>
 
-              <button
-                onClick={handleLocateUser}
-                disabled={isLocating}
-                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:justify-start"
-                title="Use my location"
-              >
-                <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
-                {isLocating ? 'Locating...' : 'My location'}
-              </button>
+              <div className="flex w-full max-w-xl flex-col gap-2 lg:min-w-[26rem]">
+                <form className="flex items-center gap-2" onSubmit={handleLocationSearch}>
+                  <label className="sr-only" htmlFor="location-search">
+                    Search for an address, postcode, or area
+                  </label>
+                  <input
+                    id="location-search"
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Search address, postcode, or area"
+                    autoComplete="street-address"
+                    autoCapitalize="words"
+                    spellCheck={false}
+                    enterKeyHint="search"
+                    className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-4 py-2.5 text-sm text-gray-900 shadow-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                  <button
+                    type="submit"
+                    disabled={isSearching}
+                    className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <Search className={`h-4 w-4 ${isSearching ? 'animate-pulse' : ''}`} />
+                    {isSearching ? 'Searching...' : 'Search'}
+                  </button>
+                </form>
+
+                {focusedLocationLabel && (
+                  <p className="truncate text-xs text-gray-500">
+                    Focused on <span className="font-medium text-gray-700">{focusedLocationLabel}</span>
+                  </p>
+                )}
+
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex w-full items-center gap-2 rounded-xl bg-gray-100 p-1 sm:w-auto">
+                    <span className="pl-2 pr-1 text-xs font-semibold uppercase tracking-wider text-gray-500">
+                      Fuel
+                    </span>
+                    <button
+                      onClick={() => setFuelType('unleaded')}
+                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+                        fuelType === 'unleaded'
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Unleaded
+                    </button>
+                    <button
+                      onClick={() => setFuelType('diesel')}
+                      className={`flex-1 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors sm:flex-none ${
+                        fuelType === 'diesel'
+                          ? 'bg-white text-gray-900 shadow-sm'
+                          : 'text-gray-500 hover:text-gray-700'
+                      }`}
+                    >
+                      Diesel
+                    </button>
+                  </div>
+
+                  <button
+                    onClick={handleLocateUser}
+                    disabled={isLocating}
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto sm:justify-start"
+                    title="Use my location"
+                  >
+                    <LocateFixed className={`h-4 w-4 ${isLocating ? 'animate-pulse' : ''}`} />
+                    {isLocating ? 'Locating...' : 'My location'}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -312,7 +393,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       <MapComponent
         stations={stations}
         fuelType={fuelType}
-        focusLocation={userLocation}
+        focusLocation={focusLocation}
         onStationSelect={handleStationSelect}
         onViewportChange={handleViewportChange}
       />
