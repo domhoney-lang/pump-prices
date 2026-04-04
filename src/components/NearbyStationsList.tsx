@@ -14,8 +14,7 @@ type FocusLocation = {
 interface NearbyStationsListProps {
   stations: StationMapRecord[];
   fuelType: 'unleaded' | 'diesel';
-  focusLocation: FocusLocation | null;
-  focusedLocationLabel: string | null;
+  listOrigin: FocusLocation | null;
   loading: boolean;
   selectedStationId: string | null;
   onStationSelect: (stationId: string) => void;
@@ -94,8 +93,7 @@ function getDirectionsUrl(lat: number, lng: number) {
 export default function NearbyStationsList({
   stations,
   fuelType,
-  focusLocation,
-  focusedLocationLabel,
+  listOrigin,
   loading,
   selectedStationId,
   onStationSelect,
@@ -104,7 +102,7 @@ export default function NearbyStationsList({
   const [sortMode, setSortMode] = useState<NearbySortMode>('cheapest');
 
   const nearbyStations = useMemo<NearbyStationListItem[]>(() => {
-    if (!focusLocation) {
+    if (!listOrigin) {
       return [];
     }
 
@@ -129,7 +127,7 @@ export default function NearbyStationsList({
         return {
           station,
           price,
-          distanceMiles: getDistanceMiles(focusLocation, station),
+          distanceMiles: getDistanceMiles(listOrigin, station),
           freshnessLabel: freshnessTone?.label ?? null,
           freshnessBadgeClassName: freshnessTone?.badgeClassName ?? null,
           freshnessRelativeText: freshnessTimestamp
@@ -192,13 +190,11 @@ export default function NearbyStationsList({
         return left.station.id.localeCompare(right.station.id);
       })
       .slice(0, 10);
-  }, [focusLocation, fuelType, sortMode, stations]);
+  }, [fuelType, listOrigin, sortMode, stations]);
 
-  if (!focusLocation) {
+  if (!listOrigin) {
     return null;
   }
-
-  const locationLabel = focusedLocationLabel ?? 'this location';
   const noPricesForFuel =
     nearbyStations.length > 0 && nearbyStations.every((station) => station.price === null);
 
@@ -215,7 +211,9 @@ export default function NearbyStationsList({
             Nearby Stations
           </h2>
           <p className="mt-1 text-sm text-gray-500">
-            Sorted by {sortMode} near <span className="font-medium text-gray-700">{locationLabel}</span>
+            {sortMode === 'nearest'
+              ? 'Sorted by nearest to the map center'
+              : 'Sorted by cheapest in the current map area'}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -254,8 +252,7 @@ export default function NearbyStationsList({
         </div>
       ) : nearbyStations.length === 0 ? (
         <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
-          No stations near <span className="font-medium text-gray-700">{locationLabel}</span> in the
-          current map area. Try zooming out or moving the map.
+          No stations in the current map area. Try zooming out or moving the map.
         </div>
       ) : (
         <>

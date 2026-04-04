@@ -91,6 +91,7 @@ export default function ClientMap({
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [focusLocation, setFocusLocation] = useState<UserLocation | null>(null);
   const [focusedLocationLabel, setFocusedLocationLabel] = useState<string | null>(null);
+  const [viewportCenter, setViewportCenter] = useState<UserLocation | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSearchResult[]>([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
@@ -184,11 +185,19 @@ export default function ClientMap({
     return 'No stations are visible in this map area. Pan or zoom out to load more stations.';
   }, [focusLocation, hasAnyStationData, loadingStations, matchingStationCount]);
 
+  const mobileNearbyListPosition = hasStations
+    ? isNearbyListOpen
+      ? 'bottom-40 opacity-100'
+      : 'pointer-events-none bottom-36 translate-y-2 opacity-0'
+    : isNearbyListOpen
+      ? 'bottom-24 opacity-100'
+      : 'pointer-events-none bottom-20 translate-y-2 opacity-0';
+
   useEffect(() => {
-    if (!focusLocation) {
+    if (!viewportCenter) {
       setIsNearbyListOpen(false);
     }
-  }, [focusLocation]);
+  }, [viewportCenter]);
 
   useEffect(() => {
     setStations(initialStations);
@@ -526,6 +535,10 @@ export default function ClientMap({
       bounds.east.toFixed(4),
     ].join(':');
     lastBoundsRef.current = bounds;
+    setViewportCenter({
+      lat: bounds.centerLat,
+      lng: bounds.centerLng,
+    });
 
     if (lastBoundsKeyRef.current === boundsKey) {
       return;
@@ -740,19 +753,40 @@ export default function ClientMap({
       <NearbyStationsList
         stations={stations}
         fuelType={fuelType}
-        focusLocation={focusLocation}
-        focusedLocationLabel={focusedLocationLabel}
+        listOrigin={viewportCenter}
         loading={loadingStations}
         selectedStationId={activeStationId}
         onStationSelect={handleStationSelect}
-        className={`absolute left-3 right-3 z-20 max-h-[36dvh] overflow-hidden transition-all duration-200 ${
-          isNearbyListOpen
-            ? 'bottom-24 opacity-100'
-            : 'pointer-events-none bottom-20 translate-y-2 opacity-0'
-        } sm:left-6 sm:right-auto sm:w-full sm:max-w-sm sm:max-h-none sm:translate-y-0 ${
+        className={`absolute left-3 right-3 z-20 max-h-[36dvh] overflow-hidden transition-all duration-200 ${mobileNearbyListPosition} sm:left-6 sm:right-auto sm:w-full sm:max-w-sm sm:max-h-none sm:translate-y-0 ${
           isNearbyListOpen ? 'sm:bottom-6' : 'sm:bottom-2'
         }`}
       />
+
+      {hasStations && (
+        <div className="pointer-events-none absolute bottom-24 left-3 right-3 z-20 sm:hidden">
+          <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+                Price Guide
+              </h3>
+              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
+                  <span className="truncate text-xs font-medium text-gray-700">Cheapest 20%</span>
+                </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="h-3 w-3 shrink-0 rounded-full bg-amber-500"></div>
+                  <span className="truncate text-xs font-medium text-gray-700">Average</span>
+                </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="h-3 w-3 shrink-0 rounded-full bg-rose-500"></div>
+                  <span className="truncate text-xs font-medium text-gray-700">Most Expensive</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Mobile Bottom Controls */}
       <div className="pointer-events-none absolute bottom-6 left-3 right-3 z-20 flex gap-3 sm:hidden">
@@ -782,18 +816,18 @@ export default function ClientMap({
         <button
           type="button"
           onClick={() => setIsNearbyListOpen((prev) => !prev)}
-          disabled={!focusLocation}
+          disabled={!viewportCenter}
           className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
             isNearbyListOpen
               ? 'border-blue-200 bg-blue-50 text-blue-700'
               : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
           }`}
           title={
-            focusLocation
+            viewportCenter
               ? isNearbyListOpen
                 ? 'Hide nearby stations'
                 : 'Show nearby stations'
-              : 'Search or use your location to view nearby stations'
+              : 'Move the map to load nearby stations'
           }
           aria-pressed={isNearbyListOpen}
           aria-label={isNearbyListOpen ? 'Hide nearby stations' : 'Show nearby stations'}
@@ -812,7 +846,7 @@ export default function ClientMap({
         </button>
       </div>
 
-      {focusLocation && (
+      {viewportCenter && (
         <div className="pointer-events-none absolute bottom-6 left-6 z-20 hidden sm:block">
           <button
             type="button"
