@@ -3,7 +3,7 @@
 import { Drawer } from 'vaul';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, formatDistanceToNow, subDays } from 'date-fns';
-import { MapPin, Navigation } from 'lucide-react';
+import { MapPin, Navigation, X } from 'lucide-react';
 
 import type { StationDetailRecord } from '@/app/actions/stations';
 
@@ -131,8 +131,18 @@ export default function StationDrawer({
               {station.postcode ? `, ${station.postcode}` : ''}. Showing {fuelType} pricing and
               the last 7 days of price history.
             </Drawer.Description>
-            <div className="mx-auto w-12 h-1.5 flex-shrink-0 rounded-full bg-gray-200 mb-8" />
-            
+            <div className="relative mb-8 flex items-center justify-center">
+              <div className="h-1.5 w-12 flex-shrink-0 rounded-full bg-gray-200" />
+              <button
+                type="button"
+                onClick={onClose}
+                aria-label="Close station details"
+                className="absolute right-0 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
             <div className="max-w-md mx-auto">
               <div className="mb-6">
                 <h2 className="text-2xl font-bold text-gray-900 tracking-tight mb-1">{station.brand || 'Unknown Brand'}</h2>
