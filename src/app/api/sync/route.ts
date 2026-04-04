@@ -34,7 +34,7 @@ function isAuthorized(request: NextRequest) {
   return { ok: true } as const;
 }
 
-export async function POST(request: NextRequest) {
+async function runSync(request: NextRequest) {
   const authorization = isAuthorized(request);
 
   if (!authorization.ok) {
@@ -49,4 +49,12 @@ export async function POST(request: NextRequest) {
 
   const result = await syncFuelDataInternal();
   return NextResponse.json(result, { status: result.success ? 200 : 500 });
+}
+
+export async function GET(request: NextRequest) {
+  return runSync(request);
+}
+
+export async function POST(request: NextRequest) {
+  return runSync(request);
 }

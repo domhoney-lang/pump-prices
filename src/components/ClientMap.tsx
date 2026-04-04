@@ -66,6 +66,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const lastBoundsKeyRef = useRef<string | null>(null);
   const viewportRequestIdRef = useRef(0);
   const suggestionRequestIdRef = useRef(0);
+  const blurHideSuggestionsTimeoutRef = useRef<number | null>(null);
   const hasAttemptedAutoLocateRef = useRef(false);
   const lastAutoRefreshAtRef = useRef(0);
 
@@ -219,8 +220,12 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   };
 
   useEffect(() => {
+    let isActive = true;
+
     if (hasAttemptedAutoLocateRef.current) {
-      return;
+      return () => {
+        isActive = false;
+      };
     }
 
     hasAttemptedAutoLocateRef.current = true;
@@ -238,14 +243,26 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     permissions
       .query({ name: 'geolocation' as PermissionName })
       .then((status) => {
-        if (status.state === 'granted') {
+        if (isActive && status.state === 'granted') {
           requestUserLocation({ silent: true });
         }
       })
       .catch(() => {
         // Ignore unsupported permission-query implementations and keep manual location.
       });
+
+    return () => {
+      isActive = false;
+    };
   }, [requestUserLocation]);
+
+  useEffect(() => {
+    return () => {
+      if (blurHideSuggestionsTimeoutRef.current !== null) {
+        window.clearTimeout(blurHideSuggestionsTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const trimmedQuery = searchQuery.trim();
@@ -374,7 +391,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
                   <Fuel className="h-5 w-5 text-blue-600" />
                 </div>
                 <div className="min-w-0">
-                  <h1 className="font-bold text-gray-900">UK Fuel Prices</h1>
+                  <h1 className="font-bold text-gray-900">Pump Prices</h1>
                   <p className="text-sm text-gray-500">{stationSummary}</p>
                 </div>
               </div>
@@ -428,9 +445,15 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
                         type="search"
                         value={searchQuery}
                         onChange={(event) => setSearchQuery(event.target.value)}
-                        onFocus={() => setShowLocationSuggestions(true)}
+                        onFocus={() => {
+                          if (blurHideSuggestionsTimeoutRef.current !== null) {
+                            window.clearTimeout(blurHideSuggestionsTimeoutRef.current);
+                            blurHideSuggestionsTimeoutRef.current = null;
+                          }
+                          setShowLocationSuggestions(true);
+                        }}
                         onBlur={() => {
-                          window.setTimeout(() => {
+                          blurHideSuggestionsTimeoutRef.current = window.setTimeout(() => {
                             setShowLocationSuggestions(false);
                           }, 120);
                         }}

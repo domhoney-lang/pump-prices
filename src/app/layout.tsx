@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "UK Fuel Prices",
+  title: "Pump Prices",
   description: "Track and map UK fuel prices using the official Gov.uk Fuel Finder API.",
 };
 

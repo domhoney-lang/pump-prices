@@ -1,4 +1,7 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+Changelog:
+- Interactive UK fuel-price map with colour-coded markers for unleaded and diesel.
+- Location search, geolocation focus, and station detail drawer for nearby stations.
+- Manual sync, protected `/api/sync` endpoint, GitHub Actions scheduling, and Lambda backfill support.
 
 ## Getting Started
 
@@ -31,7 +34,7 @@ Set these values before syncing live data:
 ## Syncing Fuel Data
 
 - Use the in-app `Initial sync` or `Refresh` button to run a manual import.
-- For scheduled imports, call `POST /api/sync` with either `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
+- For scheduled imports, call `/api/sync` with either `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
 - For a one-off full price backfill, run `npm run sync:fuel-data -- --mode=full-price-backfill`.
 - For an online-only one-off backfill through AWS Lambda, invoke the worker with `{"mode":"full-price-backfill"}`.
 
@@ -103,6 +106,15 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 
 ## Deploy on Vercel
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Set these Vercel environment variables before the first production build:
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- `DATABASE_URL`
+- `DIRECT_URL`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY` if you plan to use admin Supabase access
+- `FUEL_FINDER_CLIENT_ID`
+- `FUEL_FINDER_CLIENT_SECRET`
+- `CRON_SECRET`
+
+The included `vercel.json` schedules `/api/sync` every 30 minutes. The route accepts both `GET` and `POST`, and `CRON_SECRET` is used to authorize those requests.
