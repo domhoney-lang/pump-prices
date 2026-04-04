@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Fuel, LocateFixed, RefreshCw, Search } from 'lucide-react';
+import { Fuel, LocateFixed, RefreshCw, Search, X } from 'lucide-react';
 
 import {
   searchLocation,
@@ -20,7 +20,7 @@ import {
 import { syncFuelData } from '@/app/actions/sync';
 import StationDrawer from './StationDrawer';
 
-const MapComponent = dynamic(() => import('./Map'), {
+const MapComponent = dynamic(async () => (await import('./Map')).default, {
   ssr: false,
   loading: () => (
     <div className="absolute inset-0 z-0 flex h-screen w-full items-center justify-center bg-gray-50">
@@ -78,6 +78,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [locationSuggestions, setLocationSuggestions] = useState<LocationSearchResult[]>([]);
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [locationSuggestionMessage, setLocationSuggestionMessage] = useState<string | null>(null);
+  const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
@@ -227,6 +228,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     setShowLocationSuggestions(false);
     setSyncError(null);
     setSyncMessage(null);
+    setIsMobileSearchExpanded(false);
   }, []);
 
   const handleLocationSearch = async (event: FormEvent<HTMLFormElement>) => {
@@ -469,19 +471,38 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
     <div className="relative h-full w-full">
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 px-3 pb-4 pt-3 sm:p-4">
         <div className="mx-auto flex max-w-4xl flex-col gap-3">
-          <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white p-3 shadow-lg sm:p-4">
+          <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white/80 backdrop-blur-md p-3 shadow-lg sm:p-4">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-              <div className="flex items-start gap-3">
-                <div className="rounded-lg bg-blue-100 p-2">
-                  <Fuel className="h-5 w-5 text-blue-600" />
+              <div className="flex w-full items-start justify-between gap-3 lg:w-auto lg:justify-start">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg bg-blue-100 p-2">
+                    <Fuel className="h-5 w-5 text-blue-600" />
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="font-bold text-gray-900">Pump Prices</h1>
+                    <p className="text-sm text-gray-500">{stationSummary}</p>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <h1 className="font-bold text-gray-900">Pump Prices</h1>
-                  <p className="text-sm text-gray-500">{stationSummary}</p>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileSearchExpanded((prev) => !prev)}
+                  className={`shrink-0 rounded-xl p-2.5 transition-colors sm:hidden ${
+                    isMobileSearchExpanded
+                      ? 'bg-blue-100 text-blue-600'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                  aria-label={isMobileSearchExpanded ? 'Close search' : 'Open search'}
+                  aria-expanded={isMobileSearchExpanded}
+                >
+                  {isMobileSearchExpanded ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+                </button>
               </div>
 
-              <div className="flex w-full flex-col gap-2 lg:min-w-[26rem] lg:max-w-xl">
+              <div
+                className={`w-full flex-col gap-2 lg:min-w-[26rem] lg:max-w-xl ${
+                  isMobileSearchExpanded ? 'flex' : 'hidden sm:flex'
+                }`}
+              >
                 <div className="relative">
                   <div className="flex w-full flex-col gap-2">
                     <div className="hidden w-full items-center gap-2 rounded-xl bg-gray-100 p-1 sm:flex">
@@ -561,7 +582,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
                   </div>
 
                   {showLocationSuggestions && searchQuery.trim().length >= 2 && (
-                    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-xl">
+                    <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-gray-200 bg-white/80 backdrop-blur-md shadow-xl">
                       {isLoadingSuggestions ? (
                         <div className="px-4 py-3 text-sm text-gray-500">Searching places...</div>
                       ) : locationSuggestions.length > 0 ? (
@@ -598,10 +619,10 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
           {(syncMessage || syncError) && (
             <div
-              className={`pointer-events-auto rounded-2xl px-4 py-3 text-sm shadow-lg ${
+              className={`pointer-events-auto rounded-2xl px-4 py-3 text-sm shadow-lg backdrop-blur-md ${
                 syncError
-                  ? 'border border-red-200 bg-red-50 text-red-700'
-                  : 'border border-green-200 bg-green-50 text-green-700'
+                  ? 'border border-red-200 bg-red-50/80 text-red-700'
+                  : 'border border-green-200 bg-green-50/80 text-green-700'
               }`}
             >
               {syncError ?? syncMessage}
@@ -620,7 +641,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
       {/* Mobile Bottom Controls */}
       <div className="pointer-events-none absolute bottom-6 left-3 right-3 z-20 flex gap-3 sm:hidden">
-        <div className="pointer-events-auto flex flex-1 items-center gap-1 rounded-2xl border border-gray-100 bg-white/95 p-1.5 shadow-lg backdrop-blur-sm">
+        <div className="pointer-events-auto flex flex-1 items-center gap-1 rounded-2xl border border-gray-100 bg-white/80 p-1.5 shadow-lg backdrop-blur-md">
           <button
             onClick={() => setFuelType('unleaded')}
             className={`flex-1 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
@@ -647,7 +668,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
           type="button"
           onClick={handleLocateUser}
           disabled={isLocating}
-          className="pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-white/95 px-4 shadow-lg backdrop-blur-sm transition-colors hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-60"
+          className="pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border border-gray-100 bg-white/80 px-4 shadow-lg backdrop-blur-md transition-colors hover:bg-white/90 disabled:cursor-not-allowed disabled:opacity-60"
           title="Use my location"
         >
           <LocateFixed className={`h-5 w-5 text-gray-700 ${isLocating ? 'animate-pulse' : ''}`} />
@@ -656,7 +677,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
       {hasStations && (
         <div className="pointer-events-auto absolute bottom-24 left-3 right-3 z-20 sm:bottom-6 sm:left-auto sm:right-6">
-          <div className="mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/95 px-4 py-3 shadow-lg backdrop-blur-sm sm:mx-0 sm:w-auto sm:max-w-none">
+          <div className="mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md sm:mx-0 sm:w-auto sm:max-w-none">
             <h3 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-gray-500">
               Price Guide
             </h3>
@@ -686,7 +707,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
       {!hasAnyStationData && !isSyncing && (
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-4">
-          <div className="pointer-events-auto w-full max-w-md rounded-3xl border border-gray-100 bg-white/90 p-8 text-center shadow-2xl backdrop-blur-md">
+          <div className="pointer-events-auto w-full max-w-md rounded-3xl border border-gray-100 bg-white/80 p-8 text-center shadow-2xl backdrop-blur-md">
             <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-blue-50">
               <Fuel className="h-8 w-8 text-blue-600" />
             </div>
@@ -707,7 +728,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       )}
 
       {loadingStation && (
-        <div className="absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 rounded-full border border-gray-100 bg-white/95 px-5 py-3 text-sm font-medium text-gray-700 shadow-xl backdrop-blur-sm transition-all">
+        <div className="absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center gap-3 rounded-full border border-gray-100 bg-white/80 px-5 py-3 text-sm font-medium text-gray-700 shadow-xl backdrop-blur-md transition-all">
           <div className="flex h-5 w-5 items-center justify-center">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
           </div>
@@ -716,7 +737,7 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       )}
 
       {loadingStations && (
-        <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 rounded-full border border-gray-100 bg-white/95 px-5 py-3 text-sm font-medium text-gray-700 shadow-xl backdrop-blur-sm transition-all">
+        <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 rounded-full border border-gray-100 bg-white/80 px-5 py-3 text-sm font-medium text-gray-700 shadow-xl backdrop-blur-md transition-all">
           <div className="flex h-5 w-5 items-center justify-center">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
           </div>

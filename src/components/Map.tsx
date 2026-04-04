@@ -36,13 +36,17 @@ const DEFAULT_CENTER: [number, number] = [54.5, -3.0];
 const DEFAULT_ZOOM = 6;
 
 function emitBounds(map: L.Map, onViewportChange: (bounds: StationBoundsInput) => void) {
-  const bounds = map.getBounds();
-  onViewportChange({
-    south: bounds.getSouth(),
-    west: bounds.getWest(),
-    north: bounds.getNorth(),
-    east: bounds.getEast(),
-  });
+  try {
+    const bounds = map.getBounds();
+    onViewportChange({
+      south: bounds.getSouth(),
+      west: bounds.getWest(),
+      north: bounds.getNorth(),
+      east: bounds.getEast(),
+    });
+  } catch {
+    // Leaflet can briefly expose a stale map during Fast Refresh teardown.
+  }
 }
 
 function ViewportSync({
@@ -102,10 +106,14 @@ function FocusLocation({
       return;
     }
 
-    map.flyTo([focusLocation.lat, focusLocation.lng], Math.max(map.getZoom(), 13), {
-      animate: true,
-      duration: 1,
-    });
+    try {
+      map.flyTo([focusLocation.lat, focusLocation.lng], Math.max(map.getZoom(), 13), {
+        animate: true,
+        duration: 1,
+      });
+    } catch {
+      // Ignore stale-map errors during Fast Refresh.
+    }
   }, [focusLocation, map]);
 
   return null;
@@ -143,6 +151,7 @@ export default function Map({
   onStationSelect,
   onViewportChange,
 }: MapProps) {
+  const mapInstanceKeyRef = useRef(`map-${Math.random().toString(36).slice(2)}`);
   const normalizedFuelType = fuelType.toLowerCase();
 
   const stationPrices = useMemo(() => {
@@ -234,6 +243,7 @@ export default function Map({
   return (
     <div className="absolute inset-0 z-0">
       <MapContainer
+        key={mapInstanceKeyRef.current}
         center={DEFAULT_CENTER}
         zoom={DEFAULT_ZOOM}
         className="w-full h-full"

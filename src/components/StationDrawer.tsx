@@ -40,6 +40,14 @@ export default function StationDrawer({ station, isOpen, onClose, fuelType }: St
         <Drawer.Overlay className="fixed inset-0 bg-black/40 z-40" />
         <Drawer.Content className="bg-white flex flex-col rounded-t-[10px] h-[50vh] mt-24 fixed bottom-0 left-0 right-0 z-50 shadow-xl">
           <div className="p-6 bg-white rounded-t-[10px] flex-1 overflow-y-auto">
+            <Drawer.Title className="sr-only">
+              {station.brand || 'Unknown Brand'} station details
+            </Drawer.Title>
+            <Drawer.Description className="sr-only">
+              {station.address}
+              {station.postcode ? `, ${station.postcode}` : ''}. Showing {fuelType} pricing and
+              the last 7 days of price history.
+            </Drawer.Description>
             <div className="mx-auto w-12 h-1.5 flex-shrink-0 rounded-full bg-gray-200 mb-8" />
             
             <div className="max-w-md mx-auto">
