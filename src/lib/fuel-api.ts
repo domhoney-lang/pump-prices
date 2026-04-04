@@ -73,10 +73,25 @@ function getRequiredFuelFinderEnv(name: "FUEL_FINDER_CLIENT_ID" | "FUEL_FINDER_C
 export function normalizeFuelType(value: string): SupportedFuelType | null {
   const normalized = value.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
 
+  const regularUnleadedLabels = new Set(["unleaded", "petrol", "e10"]);
+  const premiumUnleadedLabels = new Set([
+    "e5",
+    "premiumunleaded",
+    "premiumpetrol",
+    "superunleaded",
+    "superpetrol",
+  ]);
+  const regularDieselLabels = new Set(["diesel", "b7"]);
+  const premiumDieselLabels = new Set([
+    "premiumdiesel",
+    "superdiesel",
+    "premiumb7",
+    "superb7",
+    "b10",
+  ]);
+
   const isPremiumUnleaded =
-    ["e5", "premiumunleaded", "premiumpetrol", "superunleaded", "superpetrol"].includes(
-      normalized,
-    ) ||
+    premiumUnleadedLabels.has(normalized) ||
     normalized.startsWith("e5") ||
     ((normalized.includes("premium") || normalized.includes("super")) &&
       (normalized.includes("unleaded") || normalized.includes("petrol")));
@@ -85,22 +100,22 @@ export function normalizeFuelType(value: string): SupportedFuelType | null {
     return null;
   }
 
-  if (
-    ["unleaded", "petrol", "e10"].includes(normalized) ||
-    normalized.includes("unleaded") ||
-    normalized.includes("petrol") ||
-    normalized.startsWith("e10")
-  ) {
+  if (regularUnleadedLabels.has(normalized) || normalized.startsWith("e10")) {
     return "unleaded";
   }
 
-  if (
-    ["diesel", "b7", "premiumdiesel"].includes(normalized) ||
-    normalized.includes("diesel") ||
-    normalized.startsWith("b7") ||
+  const isPremiumDiesel =
+    premiumDieselLabels.has(normalized) ||
     normalized.startsWith("b10") ||
-    normalized.includes("hvo")
-  ) {
+    normalized.includes("hvo") ||
+    ((normalized.includes("premium") || normalized.includes("super")) &&
+      normalized.includes("diesel"));
+
+  if (isPremiumDiesel) {
+    return null;
+  }
+
+  if (regularDieselLabels.has(normalized) || normalized.startsWith("b7")) {
     return "diesel";
   }
 

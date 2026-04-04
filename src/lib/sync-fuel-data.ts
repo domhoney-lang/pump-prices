@@ -253,16 +253,20 @@ async function bulkUpsertCurrentPrices(rows: PriceInsertCandidate[]) {
   }
 }
 
-async function resetUnleadedPriceDataForBackfill() {
+async function resetPriceDataForBackfill() {
   await prisma.$transaction([
     prisma.currentPrice.deleteMany({
       where: {
-        fuelType: "unleaded",
+        fuelType: {
+          in: ["unleaded", "diesel"],
+        },
       },
     }),
     prisma.priceHistory.deleteMany({
       where: {
-        fuelType: "unleaded",
+        fuelType: {
+          in: ["unleaded", "diesel"],
+        },
       },
     }),
   ]);
@@ -345,7 +349,7 @@ export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): P
       mode === "full-price-backfill" ? undefined : await getIncrementalStartTimestamp();
 
     if (mode === "full-price-backfill") {
-      await resetUnleadedPriceDataForBackfill();
+      await resetPriceDataForBackfill();
     }
 
     for await (const forecourtBatch of fuelFinderClient.iterateForecourts(incrementalStartTimestamp)) {
