@@ -8,7 +8,14 @@ export default async function Home() {
 
   return (
     <main className="h-dvh w-full relative">
-      <ClientMap initialStations={initialData.stations} totalStationCount={initialData.totalStationCount} />
+      <ClientMap
+        initialStations={initialData.stations}
+        totalStationCount={initialData.totalStationCount}
+        initialMatchingStationCount={initialData.matchingStationCount}
+        initialIsCapped={initialData.isCapped}
+        stationLimit={initialData.stationLimit}
+        initialSelectionMode={initialData.selectionMode}
+      />
     </main>
   );
 }

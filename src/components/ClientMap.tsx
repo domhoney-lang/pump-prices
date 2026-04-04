@@ -32,6 +32,10 @@ const MapComponent = dynamic(async () => (await import('./Map')).default, {
 interface ClientMapProps {
   initialStations: StationMapRecord[];
   totalStationCount: number;
+  initialMatchingStationCount: number;
+  initialIsCapped: boolean;
+  stationLimit: number;
+  initialSelectionMode: 'recent' | 'nearest' | 'spread';
 }
 
 type UserLocation = {
@@ -65,7 +69,14 @@ function getGeolocationErrorMessage(error: GeolocationPositionError) {
   }
 }
 
-export default function ClientMap({ initialStations, totalStationCount }: ClientMapProps) {
+export default function ClientMap({
+  initialStations,
+  totalStationCount,
+  initialMatchingStationCount,
+  initialIsCapped,
+  stationLimit,
+  initialSelectionMode,
+}: ClientMapProps) {
   const router = useRouter();
   const [fuelType, setFuelType] = useState<'unleaded' | 'diesel'>('unleaded');
   const [activeStationId, setActiveStationId] = useState<string | null>(null);
@@ -90,7 +101,11 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
   const [geolocationError, setGeolocationError] = useState<string | null>(null);
   const [stationLoadError, setStationLoadError] = useState<string | null>(null);
   const [stationDetailError, setStationDetailError] = useState<string | null>(null);
-  const [matchingStationCount, setMatchingStationCount] = useState(initialStations.length);
+  const [matchingStationCount, setMatchingStationCount] = useState(initialMatchingStationCount);
+  const [isStationResultsCapped, setIsStationResultsCapped] = useState(
+    initialIsCapped && initialMatchingStationCount !== totalStationCount,
+  );
+  const [stationSelectionMode, setStationSelectionMode] = useState(initialSelectionMode);
   const lastBoundsKeyRef = useRef<string | null>(null);
   const lastBoundsRef = useRef<StationBoundsInput | null>(null);
   const viewportRequestIdRef = useRef(0);
@@ -112,12 +127,37 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
         : 'No stations in the current map area';
     }
 
+    if (matchingStationCount > stations.length) {
+      return `Showing ${stations.length} of ${matchingStationCount} stations in this area`;
+    }
+
     if (matchingStationCount === stationCatalogCount) {
       return `Showing ${stations.length} of ${stationCatalogCount} stations`;
     }
 
     return `Showing ${stations.length} of ${matchingStationCount} stations in this area`;
   }, [focusLocation, hasAnyStationData, matchingStationCount, stationCatalogCount, stations.length]);
+
+  const cappedStationsMessage = useMemo(() => {
+    if (!isStationResultsCapped || loadingStations || matchingStationCount <= stations.length) {
+      return null;
+    }
+
+    const visibleCount = Math.min(stationLimit, stations.length);
+
+    if (stationSelectionMode === 'spread') {
+      return `Showing a representative ${visibleCount} of ${matchingStationCount} stations in this area. Zoom in for more detail.`;
+    }
+
+    return `Showing the nearest ${visibleCount} of ${matchingStationCount} stations in this area. Zoom in for more detail.`;
+  }, [
+    isStationResultsCapped,
+    loadingStations,
+    matchingStationCount,
+    stationLimit,
+    stations.length,
+    stationSelectionMode,
+  ]);
 
   const errorBanners = useMemo<ErrorBanner[]>(() => {
     return [
@@ -152,9 +192,17 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
 
   useEffect(() => {
     setStations(initialStations);
-    setMatchingStationCount(totalStationCount);
+    setMatchingStationCount(initialMatchingStationCount);
     setStationCatalogCount(totalStationCount);
-  }, [initialStations, totalStationCount]);
+    setIsStationResultsCapped(initialIsCapped && initialMatchingStationCount !== totalStationCount);
+    setStationSelectionMode(initialSelectionMode);
+  }, [
+    initialIsCapped,
+    initialMatchingStationCount,
+    initialSelectionMode,
+    initialStations,
+    totalStationCount,
+  ]);
 
   const handleStationSelect = useCallback(async (stationId: string) => {
     setActiveStationId(stationId);
@@ -443,6 +491,8 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
           setStations(result.stations);
           setStationCatalogCount(result.totalStationCount);
           setMatchingStationCount(result.matchingStationCount);
+          setIsStationResultsCapped(result.isCapped);
+          setStationSelectionMode(result.selectionMode);
         })
         .catch((error) => {
           if (requestId !== viewportRequestIdRef.current) {
@@ -495,6 +545,8 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
       setStations(result.stations);
       setStationCatalogCount(result.totalStationCount);
       setMatchingStationCount(result.matchingStationCount);
+      setIsStationResultsCapped(result.isCapped);
+      setStationSelectionMode(result.selectionMode);
     } catch (error) {
       if (requestId !== viewportRequestIdRef.current) {
         return;
@@ -667,6 +719,12 @@ export default function ClientMap({ initialStations, totalStationCount }: Client
               <span className="font-semibold text-red-800">{banner.title}:</span> {banner.message}
             </div>
           ))}
+
+          {cappedStationsMessage && (
+            <div className="pointer-events-auto rounded-2xl border border-blue-200 bg-blue-50/80 px-4 py-3 text-sm text-blue-800 shadow-lg backdrop-blur-md">
+              {cappedStationsMessage}
+            </div>
+          )}
         </div>
       </div>
 

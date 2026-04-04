@@ -8,6 +8,7 @@ import {
 } from "@/lib/fuel-api";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { normalizeUkStationCoordinates } from "@/lib/station-coordinates";
 
 const STATION_UPSERT_CHUNK_SIZE = 250;
 const PRICE_HISTORY_INSERT_CHUNK_SIZE = 1_000;
@@ -186,8 +187,10 @@ async function upsertForecourtBatch(batch: FuelFinderForecourt[], knownStationId
     .map((station) => {
       const latitude = toNumber(station.location?.latitude);
       const longitude = toNumber(station.location?.longitude);
+      const postcode = station.location?.postcode ?? null;
+      const normalizedCoordinates = normalizeUkStationCoordinates(latitude, longitude, postcode);
 
-      if (!station.node_id || latitude === null || longitude === null) {
+      if (!station.node_id || !normalizedCoordinates) {
         return null;
       }
 
@@ -195,9 +198,9 @@ async function upsertForecourtBatch(batch: FuelFinderForecourt[], knownStationId
         id: station.node_id,
         brand: station.brand_name ?? station.trading_name ?? null,
         address: buildAddress(station),
-        postcode: station.location?.postcode ?? null,
-        lat: latitude,
-        lng: longitude,
+        postcode,
+        lat: normalizedCoordinates.lat,
+        lng: normalizedCoordinates.lng,
       };
     })
     .filter((station): station is NonNullable<typeof station> => station !== null);

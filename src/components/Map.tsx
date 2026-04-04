@@ -1,7 +1,7 @@
 'use client';
 
-import { memo, useCallback, useEffect, useId, useMemo, useRef } from 'react';
-import { CircleMarker, MapContainer, TileLayer, Marker, useMap, useMapEvents } from 'react-leaflet';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
+import { CircleMarker, MapContainer, Marker, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 
@@ -30,20 +30,42 @@ interface MapProps {
 
 type StationMarkerEntry = {
   station: StationMapRecord;
+  latestPrice: number | undefined;
   icon: L.DivIcon;
+};
+
+type StationClusterEntry = {
+  key: string;
+  lat: number;
+  lng: number;
+  count: number;
+  hasSelected: boolean;
+};
+
+type StationClusterAggregate = {
+  markers: StationMarkerEntry[];
+  latSum: number;
+  lngSum: number;
+  count: number;
+  hasSelected: boolean;
 };
 
 const DEFAULT_CENTER: [number, number] = [54.5, -3.0];
 const DEFAULT_ZOOM = 6;
+const CLUSTER_ZOOM_THRESHOLD = 12;
+const CLUSTER_STATION_THRESHOLD = 120;
 
 function emitBounds(map: L.Map, onViewportChange: (bounds: StationBoundsInput) => void) {
   try {
     const bounds = map.getBounds();
+    const center = map.getCenter();
     onViewportChange({
       south: bounds.getSouth(),
       west: bounds.getWest(),
       north: bounds.getNorth(),
       east: bounds.getEast(),
+      centerLat: center.lat,
+      centerLng: center.lng,
     });
   } catch {
     // Leaflet can briefly expose a stale map during Fast Refresh teardown.
@@ -91,6 +113,22 @@ function ViewportSync({
     },
     [],
   );
+
+  return null;
+}
+
+function ZoomSync({ onZoomChange }: { onZoomChange: (zoom: number) => void }) {
+  const map = useMap();
+
+  useEffect(() => {
+    onZoomChange(map.getZoom());
+  }, [map, onZoomChange]);
+
+  useMapEvents({
+    zoomend() {
+      onZoomChange(map.getZoom());
+    },
+  });
 
   return null;
 }
@@ -145,6 +183,51 @@ const StationMarkers = memo(function StationMarkers({
   );
 });
 
+const StationClusters = memo(function StationClusters({
+  clusters,
+}: {
+  clusters: StationClusterEntry[];
+}) {
+  const map = useMap();
+
+  return (
+    <>
+      {clusters.map((cluster) => {
+        const size = cluster.count < 10 ? 34 : cluster.count < 100 ? 40 : 46;
+        const label = cluster.count > 99 ? '99+' : `${cluster.count}`;
+        const markerStyle = [
+          `width:${size}px`,
+          `height:${size}px`,
+          cluster.hasSelected
+            ? 'box-shadow: 0 0 0 4px rgba(147, 197, 253, 0.95), 0 10px 20px rgba(15, 23, 42, 0.25);'
+            : 'box-shadow: 0 10px 20px rgba(15, 23, 42, 0.22);',
+        ].join(';');
+
+        return (
+          <Marker
+            key={cluster.key}
+            position={[cluster.lat, cluster.lng]}
+            icon={L.divIcon({
+              className: 'station-cluster-marker',
+              html: `<div style="${markerStyle}" class="flex items-center justify-center rounded-full border-2 border-white bg-sky-600 text-sm font-bold text-white">${label}</div>`,
+              iconSize: [size, size],
+              iconAnchor: [Math.round(size / 2), Math.round(size / 2)],
+            })}
+            eventHandlers={{
+              click: () => {
+                map.flyTo([cluster.lat, cluster.lng], Math.min(map.getZoom() + 2, 15), {
+                  animate: true,
+                  duration: 0.5,
+                });
+              },
+            }}
+          />
+        );
+      })}
+    </>
+  );
+});
+
 export default function Map({
   stations,
   fuelType,
@@ -154,15 +237,16 @@ export default function Map({
   onViewportChange,
 }: MapProps) {
   const mapInstanceKey = useId();
+  const [mapZoom, setMapZoom] = useState(DEFAULT_ZOOM);
   const normalizedFuelType = fuelType.toLowerCase();
 
   const stationPrices = useMemo(() => {
     return stations.map((station) => {
       const latestCurrentPrice = station.currentPrices.find(
-        (price) => price.fuelType.toLowerCase() === normalizedFuelType,
+        (price) => price.fuelType === normalizedFuelType,
       )?.price;
-      const fallbackPrice = station.prices.find(
-        (price) => price.fuelType.toLowerCase() === normalizedFuelType,
+      const fallbackPrice = station.fallbackPrices.find(
+        (price) => price.fuelType === normalizedFuelType,
       )?.price;
 
       return {
@@ -171,6 +255,9 @@ export default function Map({
       };
     });
   }, [normalizedFuelType, stations]);
+
+  const shouldClusterMarkers =
+    stations.length > CLUSTER_STATION_THRESHOLD && mapZoom < CLUSTER_ZOOM_THRESHOLD;
 
   const { cheapThreshold, expensiveThreshold, absoluteCheapestPrice } = useMemo(() => {
     const validPrices = stationPrices
@@ -234,7 +321,7 @@ export default function Map({
     return L.divIcon({
       className: 'custom-marker',
       html: `<div class="relative group cursor-pointer drop-shadow-md">
-               ${isCheapest ? `<div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-amber-400 text-amber-950 text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10 tracking-widest whitespace-nowrap border border-amber-300">BEST</div>` : ''}
+               ${isCheapest ? `<div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10 tracking-widest whitespace-nowrap border border-emerald-600">BEST</div>` : ''}
                <div class="absolute -inset-1 ${colors.ring} rounded-full blur-sm transition-all ${selectionClasses.ring}"></div>
                <div class="relative ${colors.bg} text-white font-bold px-2.5 py-1 rounded-full text-sm whitespace-nowrap border-2 border-white ${colors.hoverBg} ${selectionClasses.pill} transition-all flex items-center justify-center">
                  ${priceText}
@@ -250,6 +337,7 @@ export default function Map({
   const stationMarkers = useMemo(() => {
     return stationPrices.map(({ station, latestPrice }) => ({
       station,
+      latestPrice,
       icon: createCustomIcon(
         latestPrice,
         latestPrice !== undefined && latestPrice === absoluteCheapestPrice,
@@ -257,6 +345,65 @@ export default function Map({
       ),
     }));
   }, [absoluteCheapestPrice, createCustomIcon, selectedStationId, stationPrices]);
+
+  const clusteredMarkers = useMemo<StationClusterEntry[]>(() => {
+    if (!shouldClusterMarkers) {
+      return [];
+    }
+
+    const cellSize = Math.max(0.004, 0.4 / 2 ** Math.max(mapZoom - DEFAULT_ZOOM, 0));
+    const clusters = new globalThis.Map<
+      string,
+      StationClusterAggregate
+    >();
+
+    for (const marker of stationMarkers) {
+      const latBucket = Math.floor(marker.station.lat / cellSize);
+      const lngBucket = Math.floor(marker.station.lng / cellSize);
+      const key = `${latBucket}:${lngBucket}`;
+      const existingCluster = clusters.get(key);
+
+      if (existingCluster) {
+        existingCluster.markers.push(marker);
+        existingCluster.latSum += marker.station.lat;
+        existingCluster.lngSum += marker.station.lng;
+        existingCluster.count += 1;
+        existingCluster.hasSelected ||= marker.station.id === selectedStationId;
+        continue;
+      }
+
+      clusters.set(key, {
+        markers: [marker],
+        latSum: marker.station.lat,
+        lngSum: marker.station.lng,
+        count: 1,
+        hasSelected: marker.station.id === selectedStationId,
+      });
+    }
+
+    return Array.from(clusters.entries()).map(([key, cluster]) => {
+      const centroidLat = cluster.latSum / cluster.count;
+      const centroidLng = cluster.lngSum / cluster.count;
+      const anchorMarker = cluster.markers.reduce((closestMarker, currentMarker) => {
+        const closestDistance =
+          (closestMarker.station.lat - centroidLat) ** 2 +
+          (closestMarker.station.lng - centroidLng) ** 2;
+        const currentDistance =
+          (currentMarker.station.lat - centroidLat) ** 2 +
+          (currentMarker.station.lng - centroidLng) ** 2;
+
+        return currentDistance < closestDistance ? currentMarker : closestMarker;
+      }, cluster.markers[0]);
+
+      return {
+        key,
+        lat: anchorMarker.station.lat,
+        lng: anchorMarker.station.lng,
+        count: cluster.count,
+        hasSelected: cluster.hasSelected,
+      };
+    });
+  }, [mapZoom, selectedStationId, shouldClusterMarkers, stationMarkers]);
 
   return (
     <div className="absolute inset-0 z-0">
@@ -268,6 +415,7 @@ export default function Map({
         zoomControl={false}
       >
         <ViewportSync onViewportChange={onViewportChange} />
+        <ZoomSync onZoomChange={setMapZoom} />
         <FocusLocation focusLocation={focusLocation} />
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
@@ -285,7 +433,11 @@ export default function Map({
             }}
           />
         )}
-        <StationMarkers markers={stationMarkers} onStationSelect={onStationSelect} />
+        {shouldClusterMarkers ? (
+          <StationClusters clusters={clusteredMarkers} />
+        ) : (
+          <StationMarkers markers={stationMarkers} onStationSelect={onStationSelect} />
+        )}
       </MapContainer>
     </div>
   );

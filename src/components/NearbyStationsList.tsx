@@ -113,10 +113,10 @@ export default function NearbyStationsList({
     return stations
       .map((station) => {
         const latestCurrentPrice = station.currentPrices.find(
-          (price) => price.fuelType.toLowerCase() === normalizedFuelType,
+          (price) => price.fuelType === normalizedFuelType,
         );
-        const fallbackPrice = station.prices.find(
-          (price) => price.fuelType.toLowerCase() === normalizedFuelType,
+        const fallbackPrice = station.fallbackPrices.find(
+          (price) => price.fuelType === normalizedFuelType,
         );
         const price = latestCurrentPrice?.price ?? fallbackPrice?.price ?? null;
         const freshnessTimestamp = latestCurrentPrice?.timestamp
