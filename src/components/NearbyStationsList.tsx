@@ -1,5 +1,6 @@
 'use client';
 
+import type { CSSProperties } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { MapPin, Navigation } from 'lucide-react';
 import { useMemo, useState, type Ref } from 'react';
@@ -17,10 +18,12 @@ interface NearbyStationsListProps {
   fuelType: 'unleaded' | 'diesel';
   priceBenchmark: PriceBenchmark | null;
   listOrigin: FocusLocation | null;
+  originLabel: string;
   loading: boolean;
   selectedStationId: string | null;
   onStationSelect: (stationId: string) => void;
   className?: string;
+  style?: CSSProperties;
   containerRef?: Ref<HTMLElement>;
 }
 
@@ -98,10 +101,12 @@ export default function NearbyStationsList({
   fuelType,
   priceBenchmark,
   listOrigin,
+  originLabel,
   loading,
   selectedStationId,
   onStationSelect,
   className,
+  style,
   containerRef,
 }: NearbyStationsListProps) {
   const [sortMode, setSortMode] = useState<NearbySortMode>('cheapest');
@@ -226,6 +231,7 @@ export default function NearbyStationsList({
   return (
     <section
       ref={containerRef}
+      style={style}
       className={`pointer-events-auto rounded-2xl border border-gray-100 bg-white/90 p-4 shadow-xl backdrop-blur-md ${
         className ?? ''
       }`}
@@ -238,7 +244,7 @@ export default function NearbyStationsList({
           </h2>
           <p className="mt-1 text-sm text-gray-500">
             {sortMode === 'nearest'
-              ? 'Sorted by nearest to the map center'
+              ? `Sorted by nearest to ${originLabel}`
               : 'Sorted by cheapest nearby'}
           </p>
         </div>

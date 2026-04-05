@@ -2,12 +2,13 @@
 
 /*
 Changelog:
+- Added best-nearby guidance, nearby-station sorting, and richer station detail insights.
 - Split searched map focus from actual user location so the blue dot only represents geolocation.
-- Added a distinct purple search pin and restored the geolocation button's focused zoom behavior.
-- Unified price colors across the map, drawer, and nearby list, and improved mobile search input focus.
+- Unified price colors across the map, drawer, and nearby list, and improved mobile search behavior.
 */
 
 import {
+  type CSSProperties,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -87,6 +88,9 @@ const LOCATION_SUGGESTION_DEBOUNCE_MS = 250;
 const MAP_LOADING_MIN_VISIBLE_MS = 300;
 const MAP_LOADING_SHOW_DELAY_MS = 150;
 const MOBILE_PRICE_GUIDE_STORAGE_KEY = 'pump-prices:mobile-price-guide:v1';
+const MOBILE_BOTTOM_CONTROLS_BOTTOM_PX = 24;
+const MOBILE_OVERLAY_STACK_GAP_PX = 16;
+const MOBILE_NEARBY_LIST_HIDDEN_OFFSET_PX = 16;
 const USER_LOCATION_ACTIVE_RADIUS_MILES = 0.25;
 const USER_LOCATION_FOCUS_ZOOM = 13;
 
@@ -105,6 +109,17 @@ function areOverlayRectsEqual(left: OverlayRect[], right: OverlayRect[]) {
       rect.bottom === other.bottom
     );
   });
+}
+
+function areMobileOverlayHeightsEqual(
+  left: { bottomControls: number; priceGuide: number; bestNearby: number },
+  right: { bottomControls: number; priceGuide: number; bestNearby: number },
+) {
+  return (
+    left.bottomControls === right.bottomControls &&
+    left.priceGuide === right.priceGuide &&
+    left.bestNearby === right.bestNearby
+  );
 }
 
 function toRadians(value: number) {
@@ -216,6 +231,9 @@ export default function ClientMap({
   const [locationSuggestionMessage, setLocationSuggestionMessage] = useState<string | null>(null);
   const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState(false);
   const [isMobilePriceGuideVisible, setIsMobilePriceGuideVisible] = useState(true);
+  const [dismissedMobileBestNearbyKey, setDismissedMobileBestNearbyKey] = useState<string | null>(
+    null,
+  );
   const [hasLoadedMobilePriceGuidePreference, setHasLoadedMobilePriceGuidePreference] =
     useState(false);
   const [isNearbyListOpen, setIsNearbyListOpen] = useState(false);
@@ -232,6 +250,11 @@ export default function ClientMap({
   const [bestNearby, setBestNearby] = useState<BestNearby | null>(initialBestNearby);
   const [bestNearbyIsObscured, setBestNearbyIsObscured] = useState(false);
   const [mapObstructionRects, setMapObstructionRects] = useState<OverlayRect[]>([]);
+  const [mobileOverlayHeights, setMobileOverlayHeights] = useState({
+    bottomControls: 0,
+    priceGuide: 0,
+    bestNearby: 0,
+  });
   const lastBoundsKeyRef = useRef<string | null>(null);
   const lastBoundsRef = useRef<StationBoundsInput | null>(null);
   const viewportRequestIdRef = useRef(0);
@@ -246,6 +269,7 @@ export default function ClientMap({
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const topChromeRef = useRef<HTMLDivElement | null>(null);
   const nearbyListRef = useRef<HTMLElement | null>(null);
+  const mobileBestNearbyRef = useRef<HTMLDivElement | null>(null);
   const mobilePriceGuideRef = useRef<HTMLDivElement | null>(null);
   const mobileBottomControlsRef = useRef<HTMLDivElement | null>(null);
   const desktopNearbyToggleRef = useRef<HTMLDivElement | null>(null);
@@ -254,10 +278,10 @@ export default function ClientMap({
   const hasStations = stations.length > 0;
   const hasAnyStationData = stationCatalogCount > 0;
   const activeBestNearby = bestNearby?.[fuelType] ?? null;
+  const bestNearbyNeedsAttention =
+    activeBestNearby !== null && (!activeBestNearby.inViewport || bestNearbyIsObscured);
   const showOffscreenBestNearbyAlert =
-    activeBestNearby !== null &&
-    (!activeBestNearby.inViewport || bestNearbyIsObscured) &&
-    !loadingStations;
+    bestNearbyNeedsAttention && !loadingStations;
   const bestNearbyHiddenByChrome =
     activeBestNearby !== null && activeBestNearby.inViewport && bestNearbyIsObscured;
   const bestNearbyDirection =
@@ -267,12 +291,21 @@ export default function ClientMap({
           lng: activeBestNearby.lng,
         })
       : null;
+  const mobileBestNearbyKey = activeBestNearby ? `${fuelType}:${activeBestNearby.stationId}` : null;
+  const isCurrentMobileBestNearbyDismissed =
+    mobileBestNearbyKey !== null && dismissedMobileBestNearbyKey === mobileBestNearbyKey;
   const isFocusedOnUserLocation =
     userLocation !== null &&
     viewportCenter !== null &&
     mapFocusLabel === 'Your location' &&
     getDistanceMiles(userLocation, viewportCenter) <= USER_LOCATION_ACTIVE_RADIUS_MILES;
   const distanceReferenceLocation = userLocation ?? mapFocusLocation;
+  const nearbyListOrigin = distanceReferenceLocation ?? viewportCenter;
+  const nearbyListOriginLabel = userLocation
+    ? 'your location'
+    : mapFocusLocation
+      ? 'the selected location'
+      : 'the map center';
   const nearbyFuelSummary = priceBenchmark?.fuelSummaries[fuelType] ?? null;
   const nationalFuelSummary = initialNationalPriceBenchmark?.fuelSummaries[fuelType] ?? null;
   const stationSummary = useMemo<ReactNode>(() => {
@@ -292,7 +325,7 @@ export default function ClientMap({
       return `Local avg ${fuelLabel} is unavailable`;
     }
 
-    const localSummaryText = `Local avg ${fuelLabel} ${nearbyFuelSummary.averagePrice.toFixed(1)}p from ${nearbyFuelSummary.stationCount} stations`;
+    const localSummaryText = `Local ${fuelLabel} avg ${nearbyFuelSummary.averagePrice.toFixed(1)}p (${nearbyFuelSummary.stationCount} nearby)`;
 
     if (!nationalFuelSummary || nationalFuelSummary.averagePrice === null) {
       return localSummaryText;
@@ -386,13 +419,85 @@ export default function ClientMap({
   }, [hasAnyStationData, loadingStations, mapFocusLocation, matchingStationCount]);
 
   const showMobilePriceGuide = hasStations && isMobilePriceGuideVisible;
-  const mobileNearbyListPosition = showMobilePriceGuide
-    ? isNearbyListOpen
-      ? 'bottom-40 opacity-100'
-      : 'pointer-events-none bottom-36 translate-y-2 opacity-0'
-    : isNearbyListOpen
-      ? 'bottom-24 opacity-100'
-      : 'pointer-events-none bottom-20 translate-y-2 opacity-0';
+  const showMobileBestNearbyButton =
+    activeBestNearby !== null && (bestNearbyNeedsAttention || isCurrentMobileBestNearbyDismissed);
+  const showMobileBestNearbyCard = showMobileBestNearbyButton && !isCurrentMobileBestNearbyDismissed;
+  const mobilePriceGuideBottomPx =
+    MOBILE_BOTTOM_CONTROLS_BOTTOM_PX +
+    mobileOverlayHeights.bottomControls +
+    MOBILE_OVERLAY_STACK_GAP_PX;
+  const mobileBestNearbyBottomPx = showMobilePriceGuide
+    ? mobilePriceGuideBottomPx +
+      mobileOverlayHeights.priceGuide +
+      MOBILE_OVERLAY_STACK_GAP_PX
+    : MOBILE_BOTTOM_CONTROLS_BOTTOM_PX +
+      mobileOverlayHeights.bottomControls +
+      MOBILE_OVERLAY_STACK_GAP_PX;
+  const mobileNearbyListBaseBottomPx = showMobileBestNearbyCard
+    ? mobileBestNearbyBottomPx +
+      mobileOverlayHeights.bestNearby +
+      MOBILE_OVERLAY_STACK_GAP_PX
+    : showMobilePriceGuide
+      ? mobilePriceGuideBottomPx +
+        mobileOverlayHeights.priceGuide +
+        MOBILE_OVERLAY_STACK_GAP_PX
+      : MOBILE_BOTTOM_CONTROLS_BOTTOM_PX +
+        mobileOverlayHeights.bottomControls +
+        MOBILE_OVERLAY_STACK_GAP_PX;
+  const mobileNearbyListBottomPx = isNearbyListOpen
+    ? mobileNearbyListBaseBottomPx
+    : Math.max(
+        MOBILE_BOTTOM_CONTROLS_BOTTOM_PX,
+        mobileNearbyListBaseBottomPx - MOBILE_NEARBY_LIST_HIDDEN_OFFSET_PX,
+      );
+  const mobilePriceGuideStyle = {
+    '--mobile-price-guide-bottom': `${mobilePriceGuideBottomPx}px`,
+  } as CSSProperties;
+  const mobileBestNearbyStyle = {
+    '--mobile-best-nearby-bottom': `${mobileBestNearbyBottomPx}px`,
+  } as CSSProperties;
+  const mobileNearbyListStyle = {
+    '--mobile-nearby-list-bottom': `${mobileNearbyListBottomPx}px`,
+  } as CSSProperties;
+
+  const updateMobileOverlayHeights = useCallback(() => {
+    if (typeof window === 'undefined' || window.innerWidth >= 640) {
+      setMobileOverlayHeights((currentHeights) =>
+        areMobileOverlayHeightsEqual(currentHeights, {
+          bottomControls: 0,
+          priceGuide: 0,
+          bestNearby: 0,
+        })
+          ? currentHeights
+          : {
+              bottomControls: 0,
+              priceGuide: 0,
+              bestNearby: 0,
+            },
+      );
+      return;
+    }
+
+    const nextHeights = {
+      bottomControls: Math.round(
+        mobileBottomControlsRef.current?.getBoundingClientRect().height ?? 0,
+      ),
+      priceGuide:
+        showMobilePriceGuide && mobilePriceGuideRef.current
+          ? Math.round(mobilePriceGuideRef.current.getBoundingClientRect().height)
+          : 0,
+      bestNearby:
+        showMobileBestNearbyCard && mobileBestNearbyRef.current
+          ? Math.round(mobileBestNearbyRef.current.getBoundingClientRect().height)
+          : 0,
+    };
+
+    setMobileOverlayHeights((currentHeights) =>
+      areMobileOverlayHeightsEqual(currentHeights, nextHeights)
+        ? currentHeights
+        : nextHeights,
+    );
+  }, [showMobileBestNearbyCard, showMobilePriceGuide]);
 
   const updateMapObstructionRects = useCallback(() => {
     const mapContainer = mapContainerRef.current;
@@ -446,6 +551,10 @@ export default function ClientMap({
         addRect(nearbyListRef.current);
       }
 
+      if (showMobileBestNearbyCard) {
+        addRect(mobileBestNearbyRef.current);
+      }
+
       if (showMobilePriceGuide) {
         addRect(mobilePriceGuideRef.current);
       }
@@ -456,7 +565,7 @@ export default function ClientMap({
     setMapObstructionRects((currentRects) =>
       areOverlayRectsEqual(currentRects, nextRects) ? currentRects : nextRects,
     );
-  }, [hasStations, isNearbyListOpen, showMobilePriceGuide, viewportCenter]);
+  }, [hasStations, isNearbyListOpen, showMobileBestNearbyCard, showMobilePriceGuide, viewportCenter]);
 
   useLayoutEffect(() => {
     updateMapObstructionRects();
@@ -469,6 +578,7 @@ export default function ClientMap({
       mapContainerRef.current,
       topChromeRef.current,
       nearbyListRef.current,
+      mobileBestNearbyRef.current,
       mobilePriceGuideRef.current,
       mobileBottomControlsRef.current,
       desktopNearbyToggleRef.current,
@@ -493,6 +603,38 @@ export default function ClientMap({
       window.removeEventListener('resize', updateMapObstructionRects);
     };
   }, [updateMapObstructionRects]);
+
+  useLayoutEffect(() => {
+    updateMobileOverlayHeights();
+
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const observedElements = [
+      mobileBestNearbyRef.current,
+      mobilePriceGuideRef.current,
+      mobileBottomControlsRef.current,
+    ].filter((element): element is HTMLDivElement => element !== null);
+
+    const resizeObserver =
+      typeof ResizeObserver === 'undefined'
+        ? null
+        : new ResizeObserver(() => {
+            updateMobileOverlayHeights();
+          });
+
+    for (const element of observedElements) {
+      resizeObserver?.observe(element);
+    }
+
+    window.addEventListener('resize', updateMobileOverlayHeights);
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener('resize', updateMobileOverlayHeights);
+    };
+  }, [updateMobileOverlayHeights]);
 
   useEffect(() => {
     if (!viewportCenter) {
@@ -595,6 +737,20 @@ export default function ClientMap({
       setBestNearbyIsObscured(false);
     }
   }, [activeBestNearby]);
+
+  useEffect(() => {
+    if (!mobileBestNearbyKey) {
+      setDismissedMobileBestNearbyKey(null);
+      return;
+    }
+
+    if (
+      dismissedMobileBestNearbyKey !== null &&
+      dismissedMobileBestNearbyKey !== mobileBestNearbyKey
+    ) {
+      setDismissedMobileBestNearbyKey(null);
+    }
+  }, [dismissedMobileBestNearbyKey, mobileBestNearbyKey]);
 
   useEffect(() => {
     setStations(initialStations);
@@ -1013,6 +1169,44 @@ export default function ClientMap({
     setMapFocusLabel(`${activeBestNearby.brand || 'Nearby station'} (${fuelType})`);
   }, [activeBestNearby, fuelType]);
 
+  const handleDismissMobileBestNearby = useCallback(() => {
+    if (!mobileBestNearbyKey) {
+      return;
+    }
+
+    setDismissedMobileBestNearbyKey(mobileBestNearbyKey);
+  }, [mobileBestNearbyKey]);
+
+  const handleToggleMobileBestNearby = useCallback(() => {
+    if (!mobileBestNearbyKey) {
+      return;
+    }
+
+    setDismissedMobileBestNearbyKey((currentKey) =>
+      currentKey === mobileBestNearbyKey ? null : mobileBestNearbyKey,
+    );
+  }, [mobileBestNearbyKey]);
+
+  const bestNearbySummary = activeBestNearby ? (
+    <>
+      Best nearby {fuelType} is <span className="font-semibold">{activeBestNearby.price.toFixed(1)}p</span>{' '}
+      at <span className="font-semibold">{activeBestNearby.brand || 'Unknown Brand'}</span>,{' '}
+      {activeBestNearby.distanceMiles < 10
+        ? `${activeBestNearby.distanceMiles.toFixed(1)} mi away`
+        : `${Math.round(activeBestNearby.distanceMiles)} mi away`}
+      {bestNearbyHiddenByChrome ? (
+        ', but it is tucked behind the map controls.'
+      ) : bestNearbyDirection ? (
+        <>
+          , <span className="font-semibold">{getDirectionArrow(bestNearbyDirection)}</span> just{' '}
+          {bestNearbyDirection} of this view.
+        </>
+      ) : (
+        ', just outside this view.'
+      )}
+    </>
+  ) : null;
+
   return (
     <div ref={mapContainerRef} className="relative h-full w-full">
       {showMapLoadingIndicator && (
@@ -1194,27 +1388,9 @@ export default function ClientMap({
           </div>
 
           {showOffscreenBestNearbyAlert && activeBestNearby && (
-            <div className="pointer-events-auto rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md">
+            <div className="hidden pointer-events-auto rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md sm:block">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="min-w-0">
-                  Best nearby {fuelType} is{' '}
-                  <span className="font-semibold">{activeBestNearby.price.toFixed(1)}p</span> at{' '}
-                  <span className="font-semibold">{activeBestNearby.brand || 'Unknown Brand'}</span>,
-                  {' '}
-                  {activeBestNearby.distanceMiles < 10
-                    ? `${activeBestNearby.distanceMiles.toFixed(1)} mi away`
-                    : `${Math.round(activeBestNearby.distanceMiles)} mi away`}
-                  {bestNearbyHiddenByChrome ? (
-                    ', but it is tucked behind the map controls.'
-                  ) : bestNearbyDirection ? (
-                    <>
-                      , <span className="font-semibold">{getDirectionArrow(bestNearbyDirection)}</span>{' '}
-                      just {bestNearbyDirection} of this view.
-                    </>
-                  ) : (
-                    ', just outside this view.'
-                  )}
-                </p>
+                <p className="min-w-0">{bestNearbySummary}</p>
                 <button
                   type="button"
                   onClick={handleShowBestNearby}
@@ -1253,37 +1429,66 @@ export default function ClientMap({
         stations={stations}
         fuelType={fuelType}
         priceBenchmark={priceBenchmark}
-        listOrigin={viewportCenter}
+        listOrigin={nearbyListOrigin}
+        originLabel={nearbyListOriginLabel}
         loading={loadingStations}
         selectedStationId={activeStationId}
         onStationSelect={handleStationSelect}
         containerRef={nearbyListRef}
-        className={`absolute left-3 right-3 z-20 max-h-[36dvh] overflow-hidden transition-all duration-200 ${mobileNearbyListPosition} sm:left-6 sm:right-auto sm:w-full sm:max-w-sm sm:max-h-none sm:translate-y-0 ${
+        className={`absolute left-3 right-3 z-20 max-h-[36dvh] overflow-hidden transition-all duration-200 bottom-[var(--mobile-nearby-list-bottom)] ${
+          isNearbyListOpen ? 'opacity-100' : 'pointer-events-none translate-y-2 opacity-0'
+        } sm:left-6 sm:right-auto sm:w-full sm:max-w-sm sm:max-h-none sm:translate-y-0 ${
           isNearbyListOpen ? 'sm:bottom-6' : 'sm:bottom-2'
         }`}
+        style={mobileNearbyListStyle}
       />
 
+      {showMobileBestNearbyCard && activeBestNearby && (
+        <div
+          ref={mobileBestNearbyRef}
+          style={mobileBestNearbyStyle}
+          className="pointer-events-none absolute bottom-[var(--mobile-best-nearby-bottom)] left-3 right-3 z-20 sm:hidden"
+        >
+          <div className="pointer-events-auto rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                  Best Nearby
+                </h3>
+                <p className="mt-2">{bestNearbySummary}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleDismissMobileBestNearby}
+                className="rounded-full p-1 text-emerald-500 transition-colors hover:bg-emerald-100 hover:text-emerald-700"
+                aria-label="Hide best nearby"
+                title="Hide best nearby"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={handleShowBestNearby}
+              className="mt-3 inline-flex w-full items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
+            >
+              Show on map
+            </button>
+          </div>
+        </div>
+      )}
+
       {showMobilePriceGuide && (
-        <div ref={mobilePriceGuideRef} className="pointer-events-none absolute bottom-24 left-3 right-3 z-20 sm:hidden">
+        <div
+          ref={mobilePriceGuideRef}
+          style={mobilePriceGuideStyle}
+          className="pointer-events-none absolute bottom-[var(--mobile-price-guide-bottom)] left-3 right-3 z-20 sm:hidden"
+        >
           <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md">
             <div className="flex items-center justify-between gap-3">
-              <h3 className="shrink-0 text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                 Price Guide
               </h3>
-              <div className="flex min-w-0 flex-1 items-center justify-between gap-2">
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
-                  <span className="truncate text-xs font-medium text-gray-700">Cheapest nearby</span>
-                </div>
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="h-3 w-3 shrink-0 rounded-full bg-amber-500"></div>
-                  <span className="truncate text-xs font-medium text-gray-700">Average</span>
-                </div>
-                <div className="flex min-w-0 items-center gap-2">
-                  <div className="h-3 w-3 shrink-0 rounded-full bg-rose-500"></div>
-                  <span className="truncate text-xs font-medium text-gray-700">Most Expensive</span>
-                </div>
-              </div>
               <button
                 type="button"
                 onClick={() => setIsMobilePriceGuideVisible(false)}
@@ -1293,6 +1498,20 @@ export default function ClientMap({
               >
                 <X className="h-4 w-4" />
               </button>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-3">
+              <div className="flex min-w-0 items-center justify-center gap-1.5 text-center">
+                <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
+                <span className="text-xs font-medium leading-4 text-gray-700">Cheapest nearby</span>
+              </div>
+              <div className="flex min-w-0 items-center justify-center gap-1.5 text-center">
+                <div className="h-3 w-3 shrink-0 rounded-full bg-amber-500"></div>
+                <span className="text-xs font-medium leading-4 text-gray-700">Average</span>
+              </div>
+              <div className="flex min-w-0 items-center justify-center gap-1.5 text-center">
+                <div className="h-3 w-3 shrink-0 rounded-full bg-rose-500"></div>
+                <span className="text-xs font-medium leading-4 text-gray-700">Most Expensive</span>
+              </div>
             </div>
           </div>
         </div>
@@ -1325,6 +1544,24 @@ export default function ClientMap({
             Diesel
           </button>
         </div>
+
+        {showMobileBestNearbyButton && (
+          <button
+            type="button"
+            onClick={handleToggleMobileBestNearby}
+            className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
+              bestNearbyNeedsAttention
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+            }`}
+            title={showMobileBestNearbyCard ? 'Hide best nearby' : 'Show best nearby'}
+            aria-pressed={showMobileBestNearbyCard}
+            aria-expanded={showMobileBestNearbyCard}
+            aria-label={showMobileBestNearbyCard ? 'Hide best nearby' : 'Show best nearby'}
+          >
+            <Fuel className="h-5 w-5" />
+          </button>
+        )}
 
         <button
           type="button"
@@ -1477,6 +1714,7 @@ export default function ClientMap({
         }}
         fuelType={fuelType}
         priceBenchmark={priceBenchmark}
+        nationalPriceBenchmark={initialNationalPriceBenchmark}
         focusLocation={distanceReferenceLocation}
       />
     </div>

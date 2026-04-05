@@ -5,7 +5,12 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { format, formatDistanceToNow, subDays } from 'date-fns';
 import { MapPin, Navigation, X } from 'lucide-react';
 
-import type { PriceBenchmark, StationDetailRecord, StationMapRecord } from '@/app/actions/stations';
+import type {
+  NationalPriceBenchmark,
+  PriceBenchmark,
+  StationDetailRecord,
+  StationMapRecord,
+} from '@/app/actions/stations';
 import {
   getPriceScale,
   getPriceSurfaceClassName,
@@ -25,8 +30,16 @@ interface StationDrawerProps {
   onClose: () => void;
   fuelType: 'unleaded' | 'diesel';
   priceBenchmark: PriceBenchmark | null;
+  nationalPriceBenchmark: NationalPriceBenchmark | null;
   focusLocation: FocusLocation | null;
 }
+
+type PriceInsight = {
+  arrow: '↑' | '↓' | '→';
+  amountText: string;
+  description: string;
+  className: string;
+};
 
 function getFreshnessTone(updatedAt: Date) {
   const ageHours = (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60);
@@ -85,6 +98,60 @@ function getDirectionsUrl(lat: number, lng: number) {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
+function getPriceInsight(
+  latestPrice: number | null,
+  referencePrice: number | null,
+  description: string,
+): PriceInsight | null {
+  if (latestPrice === null || referencePrice === null) {
+    return null;
+  }
+
+  const difference = latestPrice - referencePrice;
+
+  if (Math.abs(difference) < 0.05) {
+    return {
+      arrow: '→',
+      amountText: '0.0p',
+      description,
+      className: 'border-gray-200 bg-gray-50 text-gray-600',
+    };
+  }
+
+  const isAboveReference = difference > 0;
+
+  return {
+    arrow: isAboveReference ? '↑' : '↓',
+    amountText: `${Math.abs(difference).toFixed(1)}p`,
+    description,
+    className: isAboveReference
+      ? 'border-rose-200 bg-rose-50 text-rose-700'
+      : 'border-emerald-200 bg-emerald-50 text-emerald-700',
+  };
+}
+
+function getBenchmarkInsight(
+  latestPrice: number | null,
+  benchmarkPrice: number | null,
+  benchmarkLabel: string,
+): PriceInsight | null {
+  if (latestPrice === null || benchmarkPrice === null) {
+    return null;
+  }
+
+  const difference = latestPrice - benchmarkPrice;
+
+  if (Math.abs(difference) < 0.05) {
+    return getPriceInsight(latestPrice, benchmarkPrice, `in line with ${benchmarkLabel}`);
+  }
+
+  return getPriceInsight(
+    latestPrice,
+    benchmarkPrice,
+    `${difference > 0 ? 'above' : 'below'} ${benchmarkLabel}`,
+  );
+}
+
 export default function StationDrawer({
   station,
   stations,
@@ -92,6 +159,7 @@ export default function StationDrawer({
   onClose,
   fuelType,
   priceBenchmark,
+  nationalPriceBenchmark,
   focusLocation,
 }: StationDrawerProps) {
   if (!station) return null;
@@ -111,8 +179,42 @@ export default function StationDrawer({
   const latestCurrentPrice = station.currentPrices.find(
     (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
   );
-  const latestHistoricalPrice = relevantPrices.at(-1)?.price ?? null;
-  const latestPrice = latestCurrentPrice?.price ?? latestHistoricalPrice;
+  const priceTimeline = [
+    ...relevantPrices.map((price) => ({
+      price: price.price,
+      timestamp: new Date(price.timestamp),
+    })),
+    ...(latestCurrentPrice
+      ? [
+          {
+            price: latestCurrentPrice.price,
+            timestamp: new Date(latestCurrentPrice.timestamp),
+          },
+        ]
+      : []),
+  ]
+    .sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime())
+    .filter(
+      (entry, index, entries) =>
+        index === 0 ||
+        entry.price !== entries[index - 1]?.price ||
+        entry.timestamp.getTime() !== entries[index - 1]?.timestamp.getTime(),
+    );
+  const latestTimelineEntry = priceTimeline.at(-1) ?? null;
+  const previousTimelineEntry = priceTimeline.at(-2) ?? null;
+  const latestPrice = latestTimelineEntry?.price ?? null;
+  const localAveragePrice = priceBenchmark?.fuelSummaries[fuelType].averagePrice ?? null;
+  const nationalAveragePrice =
+    nationalPriceBenchmark?.fuelSummaries[fuelType].averagePrice ?? null;
+  const priceInsights = [
+    getPriceInsight(
+      latestPrice,
+      previousTimelineEntry?.price ?? null,
+      'since last price update',
+    ),
+    getBenchmarkInsight(latestPrice, localAveragePrice, 'local average'),
+    getBenchmarkInsight(latestPrice, nationalAveragePrice, 'national average'),
+  ].filter((insight): insight is PriceInsight => insight !== null);
   const priceScale =
     priceBenchmark?.fuelScales[fuelType] ??
     getPriceScale(
@@ -128,11 +230,7 @@ export default function StationDrawer({
       }),
     );
   const priceTone = getPriceTone(latestPrice, priceScale);
-  const freshnessTimestamp = latestCurrentPrice?.timestamp
-    ? new Date(latestCurrentPrice.timestamp)
-    : relevantPrices.at(-1)?.timestamp
-      ? new Date(relevantPrices.at(-1)!.timestamp)
-      : null;
+  const freshnessTimestamp = latestTimelineEntry?.timestamp ?? null;
   const freshnessTone = freshnessTimestamp ? getFreshnessTone(freshnessTimestamp) : null;
   const freshnessLabel = freshnessTimestamp
     ? `${formatDistanceToNow(freshnessTimestamp, { addSuffix: true })}`
@@ -197,27 +295,42 @@ export default function StationDrawer({
               </div>
 
               <div
-                className={`mb-8 flex items-center justify-between rounded-2xl border p-5 shadow-sm ${priceSurfaceClassName}`}
+                className={`mb-8 rounded-3xl border p-6 shadow-sm ${priceSurfaceClassName}`}
               >
-                <div>
-                  <p className="mb-1 text-sm font-medium uppercase tracking-wider text-gray-600">
+                <div className="w-full">
+                  <p className="mb-2 text-sm font-medium uppercase tracking-widest text-slate-500">
                     {fuelType}
                   </p>
-                  <p className={`text-4xl font-extrabold tracking-tight ${priceTextClassName}`}>
+                  <p className={`mb-4 text-5xl font-bold tracking-tight ${priceTextClassName}`}>
                     {latestPrice ? `${latestPrice.toFixed(1)}p` : 'N/A'}
                   </p>
                   {freshnessLabel ? (
-                    <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-gray-600">
+                    <div className="mb-6 flex flex-wrap items-center gap-3 text-sm text-slate-600">
                       <span
-                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${freshnessTone?.badgeClassName}`}
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${freshnessTone?.badgeClassName}`}
                         title={freshnessTitle}
                       >
                         {freshnessTone?.label}
                       </span>
-                      <span title={freshnessTitle}>Updated {freshnessLabel}</span>
+                      <span title={freshnessTitle} className="font-medium">Updated {freshnessLabel}</span>
                     </div>
                   ) : (
-                    <p className="mt-3 text-sm text-gray-500">No recent price timestamp available.</p>
+                    <p className="mb-6 text-sm text-slate-500">No recent price timestamp available.</p>
+                  )}
+                  {priceInsights.length > 0 && (
+                    <div className="space-y-2.5">
+                      {priceInsights.map((insight) => (
+                        <div
+                          key={insight.description}
+                          className={`flex items-center justify-between gap-3 rounded-full border px-4 py-2.5 text-sm ${insight.className}`}
+                        >
+                          <span className="font-bold whitespace-nowrap">
+                            {insight.arrow} {insight.amountText}
+                          </span>
+                          <span className="text-right font-medium opacity-90">{insight.description}</span>
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
               </div>
