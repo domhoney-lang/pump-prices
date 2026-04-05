@@ -19,7 +19,7 @@ import {
 } from 'react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
-import { Fuel, List, LocateFixed, Search, X } from 'lucide-react';
+import { Fuel, Info, List, LocateFixed, Search, X } from 'lucide-react';
 
 import {
   searchLocation,
@@ -84,6 +84,9 @@ type OverlayRect = {
 
 const FOCUS_REFRESH_COOLDOWN_MS = 60_000;
 const LOCATION_SUGGESTION_DEBOUNCE_MS = 250;
+const MAP_LOADING_MIN_VISIBLE_MS = 300;
+const MAP_LOADING_SHOW_DELAY_MS = 150;
+const MOBILE_PRICE_GUIDE_STORAGE_KEY = 'pump-prices:mobile-price-guide:v1';
 const USER_LOCATION_ACTIVE_RADIUS_MILES = 0.25;
 const USER_LOCATION_FOCUS_ZOOM = 13;
 
@@ -199,6 +202,7 @@ export default function ClientMap({
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [loadingStation, setLoadingStation] = useState(false);
   const [loadingStations, setLoadingStations] = useState(false);
+  const [showMapLoadingIndicator, setShowMapLoadingIndicator] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
@@ -211,6 +215,9 @@ export default function ClientMap({
   const [showLocationSuggestions, setShowLocationSuggestions] = useState(false);
   const [locationSuggestionMessage, setLocationSuggestionMessage] = useState<string | null>(null);
   const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState(false);
+  const [isMobilePriceGuideVisible, setIsMobilePriceGuideVisible] = useState(true);
+  const [hasLoadedMobilePriceGuidePreference, setHasLoadedMobilePriceGuidePreference] =
+    useState(false);
   const [isNearbyListOpen, setIsNearbyListOpen] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [geolocationError, setGeolocationError] = useState<string | null>(null);
@@ -230,6 +237,9 @@ export default function ClientMap({
   const viewportRequestIdRef = useRef(0);
   const suggestionRequestIdRef = useRef(0);
   const blurHideSuggestionsTimeoutRef = useRef<number | null>(null);
+  const loadingIndicatorHideTimeoutRef = useRef<number | null>(null);
+  const loadingIndicatorShowTimeoutRef = useRef<number | null>(null);
+  const loadingIndicatorShownAtRef = useRef(0);
   const locationSearchInputRef = useRef<HTMLInputElement | null>(null);
   const hasAttemptedAutoLocateRef = useRef(false);
   const lastAutoRefreshAtRef = useRef(0);
@@ -375,7 +385,8 @@ export default function ClientMap({
     return 'No stations are visible in this map area. Pan or zoom out to load more stations.';
   }, [hasAnyStationData, loadingStations, mapFocusLocation, matchingStationCount]);
 
-  const mobileNearbyListPosition = hasStations
+  const showMobilePriceGuide = hasStations && isMobilePriceGuideVisible;
+  const mobileNearbyListPosition = showMobilePriceGuide
     ? isNearbyListOpen
       ? 'bottom-40 opacity-100'
       : 'pointer-events-none bottom-36 translate-y-2 opacity-0'
@@ -435,7 +446,7 @@ export default function ClientMap({
         addRect(nearbyListRef.current);
       }
 
-      if (hasStations) {
+      if (showMobilePriceGuide) {
         addRect(mobilePriceGuideRef.current);
       }
 
@@ -445,7 +456,7 @@ export default function ClientMap({
     setMapObstructionRects((currentRects) =>
       areOverlayRectsEqual(currentRects, nextRects) ? currentRects : nextRects,
     );
-  }, [hasStations, isNearbyListOpen, viewportCenter]);
+  }, [hasStations, isNearbyListOpen, showMobilePriceGuide, viewportCenter]);
 
   useLayoutEffect(() => {
     updateMapObstructionRects();
@@ -488,6 +499,96 @@ export default function ClientMap({
       setIsNearbyListOpen(false);
     }
   }, [viewportCenter]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    if (loadingStations) {
+      if (loadingIndicatorHideTimeoutRef.current !== null) {
+        window.clearTimeout(loadingIndicatorHideTimeoutRef.current);
+        loadingIndicatorHideTimeoutRef.current = null;
+      }
+
+      if (!showMapLoadingIndicator && loadingIndicatorShowTimeoutRef.current === null) {
+        loadingIndicatorShowTimeoutRef.current = window.setTimeout(() => {
+          loadingIndicatorShownAtRef.current = Date.now();
+          setShowMapLoadingIndicator(true);
+          loadingIndicatorShowTimeoutRef.current = null;
+        }, MAP_LOADING_SHOW_DELAY_MS);
+      }
+
+      return;
+    }
+
+    if (loadingIndicatorShowTimeoutRef.current !== null) {
+      window.clearTimeout(loadingIndicatorShowTimeoutRef.current);
+      loadingIndicatorShowTimeoutRef.current = null;
+    }
+
+    if (!showMapLoadingIndicator) {
+      return;
+    }
+
+    const elapsed = Date.now() - loadingIndicatorShownAtRef.current;
+    const remaining = Math.max(0, MAP_LOADING_MIN_VISIBLE_MS - elapsed);
+
+    loadingIndicatorHideTimeoutRef.current = window.setTimeout(() => {
+      setShowMapLoadingIndicator(false);
+      loadingIndicatorHideTimeoutRef.current = null;
+    }, remaining);
+
+    return () => {
+      if (loadingIndicatorHideTimeoutRef.current !== null) {
+        window.clearTimeout(loadingIndicatorHideTimeoutRef.current);
+        loadingIndicatorHideTimeoutRef.current = null;
+      }
+    };
+  }, [loadingStations, showMapLoadingIndicator]);
+
+  useEffect(() => {
+    return () => {
+      if (loadingIndicatorShowTimeoutRef.current !== null) {
+        window.clearTimeout(loadingIndicatorShowTimeoutRef.current);
+      }
+
+      if (loadingIndicatorHideTimeoutRef.current !== null) {
+        window.clearTimeout(loadingIndicatorHideTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      setIsMobilePriceGuideVisible(
+        window.localStorage.getItem(MOBILE_PRICE_GUIDE_STORAGE_KEY) !== 'hidden',
+      );
+    } catch {
+      setIsMobilePriceGuideVisible(true);
+    } finally {
+      setHasLoadedMobilePriceGuidePreference(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedMobilePriceGuidePreference || typeof window === 'undefined') {
+      return;
+    }
+
+    try {
+      window.localStorage.setItem(
+        MOBILE_PRICE_GUIDE_STORAGE_KEY,
+        isMobilePriceGuideVisible ? 'visible' : 'hidden',
+      );
+    } catch {
+      // Ignore storage access issues and keep the in-memory preference.
+    }
+  }, [hasLoadedMobilePriceGuidePreference, isMobilePriceGuideVisible]);
 
   useEffect(() => {
     if (!activeBestNearby) {
@@ -914,6 +1015,14 @@ export default function ClientMap({
 
   return (
     <div ref={mapContainerRef} className="relative h-full w-full">
+      {showMapLoadingIndicator && (
+        <div className="pointer-events-none absolute left-3 right-3 top-3 z-20 sm:left-4 sm:right-4 sm:top-4">
+          <div className="h-1.5 overflow-hidden rounded-full bg-white/50 backdrop-blur-sm">
+            <div className="h-full w-1/3 rounded-full bg-blue-600 animate-[map-loading_1.2s_ease-in-out_infinite]" />
+          </div>
+        </div>
+      )}
+
       <div className="pointer-events-none absolute left-0 right-0 top-0 z-10 px-3 pb-4 pt-3 sm:p-4">
         <div className="mx-auto flex max-w-4xl flex-col gap-3">
           <div ref={topChromeRef} className="flex flex-col gap-3">
@@ -1154,7 +1263,7 @@ export default function ClientMap({
         }`}
       />
 
-      {hasStations && (
+      {showMobilePriceGuide && (
         <div ref={mobilePriceGuideRef} className="pointer-events-none absolute bottom-24 left-3 right-3 z-20 sm:hidden">
           <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md">
             <div className="flex items-center justify-between gap-3">
@@ -1175,6 +1284,15 @@ export default function ClientMap({
                   <span className="truncate text-xs font-medium text-gray-700">Most Expensive</span>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsMobilePriceGuideVisible(false)}
+                className="rounded-full p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                aria-label="Hide price guide"
+                title="Hide price guide"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
           </div>
         </div>
@@ -1188,7 +1306,7 @@ export default function ClientMap({
         <div className="pointer-events-auto flex flex-1 items-center gap-1 rounded-2xl border border-gray-100 bg-white/80 p-1.5 shadow-lg backdrop-blur-md">
           <button
             onClick={() => setFuelType('unleaded')}
-            className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 rounded-xl border px-2.5 py-2 text-[13px] font-medium transition-colors ${
               fuelType === 'unleaded'
                 ? 'border-blue-200 bg-blue-50 text-blue-700'
                 : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
@@ -1198,7 +1316,7 @@ export default function ClientMap({
           </button>
           <button
             onClick={() => setFuelType('diesel')}
-            className={`flex-1 rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+            className={`flex-1 rounded-xl border px-2.5 py-2 text-[13px] font-medium transition-colors ${
               fuelType === 'diesel'
                 ? 'border-blue-200 bg-blue-50 text-blue-700'
                 : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
@@ -1207,6 +1325,21 @@ export default function ClientMap({
             Diesel
           </button>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setIsMobilePriceGuideVisible((prev) => !prev)}
+          className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
+            isMobilePriceGuideVisible
+              ? 'border-blue-200 bg-blue-50 text-blue-700'
+              : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+          }`}
+          title={isMobilePriceGuideVisible ? 'Hide price guide' : 'Show price guide'}
+          aria-pressed={isMobilePriceGuideVisible}
+          aria-label={isMobilePriceGuideVisible ? 'Hide price guide' : 'Show price guide'}
+        >
+          <Info className="h-5 w-5" />
+        </button>
 
         <button
           type="button"
@@ -1329,15 +1462,6 @@ export default function ClientMap({
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
           </div>
           <span>Loading details...</span>
-        </div>
-      )}
-
-      {loadingStations && (
-        <div className="absolute bottom-6 left-1/2 z-20 flex -translate-x-1/2 items-center gap-3 rounded-full border border-gray-100 bg-white/80 px-5 py-3 text-sm font-medium text-gray-700 shadow-xl backdrop-blur-md transition-all">
-          <div className="flex h-5 w-5 items-center justify-center">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-          </div>
-          <span>Updating map...</span>
         </div>
       )}
 
