@@ -1243,7 +1243,7 @@ export default function ClientMap({
                 <div
                   className={`w-full flex-col gap-2 lg:min-w-[26rem] lg:max-w-xl ${
                     isMobileSearchExpanded ? 'flex' : 'hidden sm:flex'
-                  }`}
+                  } ${showLocationSuggestions ? 'relative z-20' : ''}`}
                 >
                   <div className="relative">
                     <div className="flex w-full flex-col gap-2">
@@ -1297,7 +1297,15 @@ export default function ClientMap({
                           id="location-search"
                           type="search"
                           value={searchQuery}
-                          onChange={(event) => setSearchQuery(event.target.value)}
+                          onChange={(event) => {
+                            if (blurHideSuggestionsTimeoutRef.current !== null) {
+                              window.clearTimeout(blurHideSuggestionsTimeoutRef.current);
+                              blurHideSuggestionsTimeoutRef.current = null;
+                            }
+
+                            setSearchQuery(event.target.value);
+                            setShowLocationSuggestions(true);
+                          }}
                           onFocus={() => {
                             if (blurHideSuggestionsTimeoutRef.current !== null) {
                               window.clearTimeout(blurHideSuggestionsTimeoutRef.current);
@@ -1329,7 +1337,7 @@ export default function ClientMap({
                     </div>
 
                     {showLocationSuggestions && searchQuery.trim().length >= 2 && (
-                      <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-30 overflow-hidden rounded-2xl border border-gray-200 bg-white/80 shadow-xl backdrop-blur-md">
+                      <div className="absolute left-0 right-0 top-[calc(100%+0.5rem)] z-40 overflow-hidden rounded-2xl border border-gray-200 bg-white/80 shadow-xl backdrop-blur-md">
                         {isLoadingSuggestions ? (
                           <div className="px-4 py-3 text-sm text-gray-500">Searching places...</div>
                         ) : locationSuggestions.length > 0 ? (
