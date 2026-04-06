@@ -231,9 +231,7 @@ export default function ClientMap({
   const [locationSuggestionMessage, setLocationSuggestionMessage] = useState<string | null>(null);
   const [isMobileSearchExpanded, setIsMobileSearchExpanded] = useState(false);
   const [isMobilePriceGuideVisible, setIsMobilePriceGuideVisible] = useState(true);
-  const [dismissedMobileBestNearbyKey, setDismissedMobileBestNearbyKey] = useState<string | null>(
-    null,
-  );
+  const [openBestNearbyKey, setOpenBestNearbyKey] = useState<string | null>(null);
   const [hasLoadedMobilePriceGuidePreference, setHasLoadedMobilePriceGuidePreference] =
     useState(false);
   const [isNearbyListOpen, setIsNearbyListOpen] = useState(false);
@@ -291,9 +289,9 @@ export default function ClientMap({
           lng: activeBestNearby.lng,
         })
       : null;
-  const mobileBestNearbyKey = activeBestNearby ? `${fuelType}:${activeBestNearby.stationId}` : null;
-  const isCurrentMobileBestNearbyDismissed =
-    mobileBestNearbyKey !== null && dismissedMobileBestNearbyKey === mobileBestNearbyKey;
+  const currentBestNearbyKey = activeBestNearby ? `${fuelType}:${activeBestNearby.stationId}` : null;
+  const isCurrentBestNearbyOpen =
+    currentBestNearbyKey !== null && openBestNearbyKey === currentBestNearbyKey;
   const isFocusedOnUserLocation =
     userLocation !== null &&
     viewportCenter !== null &&
@@ -419,9 +417,10 @@ export default function ClientMap({
   }, [hasAnyStationData, loadingStations, mapFocusLocation, matchingStationCount]);
 
   const showMobilePriceGuide = hasStations && isMobilePriceGuideVisible;
-  const showMobileBestNearbyButton =
-    activeBestNearby !== null && (bestNearbyNeedsAttention || isCurrentMobileBestNearbyDismissed);
-  const showMobileBestNearbyCard = showMobileBestNearbyButton && !isCurrentMobileBestNearbyDismissed;
+  const showMobileBestNearbyButton = activeBestNearby !== null && bestNearbyNeedsAttention;
+  const showMobileBestNearbyCard = showMobileBestNearbyButton && isCurrentBestNearbyOpen;
+  const showDesktopBestNearbyButton = showOffscreenBestNearbyAlert;
+  const showDesktopBestNearbyCard = showDesktopBestNearbyButton && isCurrentBestNearbyOpen;
   const mobilePriceGuideBottomPx =
     MOBILE_BOTTOM_CONTROLS_BOTTOM_PX +
     mobileOverlayHeights.bottomControls +
@@ -739,18 +738,15 @@ export default function ClientMap({
   }, [activeBestNearby]);
 
   useEffect(() => {
-    if (!mobileBestNearbyKey) {
-      setDismissedMobileBestNearbyKey(null);
+    if (!currentBestNearbyKey || !bestNearbyNeedsAttention) {
+      setOpenBestNearbyKey(null);
       return;
     }
 
-    if (
-      dismissedMobileBestNearbyKey !== null &&
-      dismissedMobileBestNearbyKey !== mobileBestNearbyKey
-    ) {
-      setDismissedMobileBestNearbyKey(null);
+    if (openBestNearbyKey !== null && openBestNearbyKey !== currentBestNearbyKey) {
+      setOpenBestNearbyKey(null);
     }
-  }, [dismissedMobileBestNearbyKey, mobileBestNearbyKey]);
+  }, [bestNearbyNeedsAttention, currentBestNearbyKey, openBestNearbyKey]);
 
   useEffect(() => {
     setStations(initialStations);
@@ -1167,25 +1163,22 @@ export default function ClientMap({
       zoom: 14,
     });
     setMapFocusLabel(`${activeBestNearby.brand || 'Nearby station'} (${fuelType})`);
+    setOpenBestNearbyKey(null);
   }, [activeBestNearby, fuelType]);
 
-  const handleDismissMobileBestNearby = useCallback(() => {
-    if (!mobileBestNearbyKey) {
+  const handleCloseBestNearby = useCallback(() => {
+    setOpenBestNearbyKey(null);
+  }, []);
+
+  const handleToggleBestNearby = useCallback(() => {
+    if (!currentBestNearbyKey) {
       return;
     }
 
-    setDismissedMobileBestNearbyKey(mobileBestNearbyKey);
-  }, [mobileBestNearbyKey]);
-
-  const handleToggleMobileBestNearby = useCallback(() => {
-    if (!mobileBestNearbyKey) {
-      return;
-    }
-
-    setDismissedMobileBestNearbyKey((currentKey) =>
-      currentKey === mobileBestNearbyKey ? null : mobileBestNearbyKey,
+    setOpenBestNearbyKey((openKey) =>
+      openKey === currentBestNearbyKey ? null : currentBestNearbyKey,
     );
-  }, [mobileBestNearbyKey]);
+  }, [currentBestNearbyKey]);
 
   const bestNearbySummary = activeBestNearby ? (
     <>
@@ -1385,22 +1378,53 @@ export default function ClientMap({
                 {cappedStationsMessage}
               </div>
             )}
-          </div>
 
-          {showOffscreenBestNearbyAlert && activeBestNearby && (
-            <div className="hidden pointer-events-auto rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md sm:block">
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                <p className="min-w-0">{bestNearbySummary}</p>
-                <button
-                  type="button"
-                  onClick={handleShowBestNearby}
-                  className="inline-flex shrink-0 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
-                >
-                  Show on map
-                </button>
+            {showDesktopBestNearbyButton && activeBestNearby && (
+              <div className="hidden sm:block">
+                {showDesktopBestNearbyCard ? (
+                  <div className="pointer-events-auto rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0">
+                        <div className="flex items-center justify-between gap-3">
+                          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                            Best nearby
+                          </h3>
+                          <button
+                            type="button"
+                            onClick={handleCloseBestNearby}
+                            className="rounded-full p-1 text-emerald-500 transition-colors hover:bg-emerald-100 hover:text-emerald-700"
+                            aria-label="Hide best nearby"
+                            title="Hide best nearby"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <p className="mt-2 min-w-0">{bestNearbySummary}</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleShowBestNearby}
+                        className="inline-flex shrink-0 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
+                      >
+                        Show on map
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleToggleBestNearby}
+                    className="pointer-events-auto inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm font-medium text-blue-700 shadow-lg backdrop-blur-md transition-colors hover:bg-blue-100"
+                    aria-expanded={showDesktopBestNearbyCard}
+                    aria-label="Show best nearby"
+                  >
+                    <Fuel className="h-4 w-4" />
+                    <span>Best nearby</span>
+                  </button>
+                )}
               </div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
@@ -1459,7 +1483,7 @@ export default function ClientMap({
               </div>
               <button
                 type="button"
-                onClick={handleDismissMobileBestNearby}
+                onClick={handleCloseBestNearby}
                 className="rounded-full p-1 text-emerald-500 transition-colors hover:bg-emerald-100 hover:text-emerald-700"
                 aria-label="Hide best nearby"
                 title="Hide best nearby"
@@ -1548,7 +1572,7 @@ export default function ClientMap({
         {showMobileBestNearbyButton && (
           <button
             type="button"
-            onClick={handleToggleMobileBestNearby}
+            onClick={handleToggleBestNearby}
             className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
               bestNearbyNeedsAttention
                 ? 'border-blue-200 bg-blue-50 text-blue-700'
