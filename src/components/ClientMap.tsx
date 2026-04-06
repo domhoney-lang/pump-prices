@@ -1387,51 +1387,6 @@ export default function ClientMap({
               </div>
             )}
 
-            {showDesktopBestNearbyButton && activeBestNearby && (
-              <div className="hidden sm:block">
-                {showDesktopBestNearbyCard ? (
-                  <div className="pointer-events-auto rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md">
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex items-center justify-between gap-3">
-                          <h3 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
-                            Best nearby
-                          </h3>
-                          <button
-                            type="button"
-                            onClick={handleCloseBestNearby}
-                            className="rounded-full p-1 text-emerald-500 transition-colors hover:bg-emerald-100 hover:text-emerald-700"
-                            aria-label="Hide best nearby"
-                            title="Hide best nearby"
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
-                        </div>
-                        <p className="mt-2 min-w-0">{bestNearbySummary}</p>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={handleShowBestNearby}
-                        className="inline-flex shrink-0 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
-                      >
-                        Show on map
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={handleToggleBestNearby}
-                    className="pointer-events-auto inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm font-medium text-blue-700 shadow-lg backdrop-blur-md transition-colors hover:bg-blue-100"
-                    aria-expanded={showDesktopBestNearbyCard}
-                    aria-label="Show best nearby"
-                  >
-                    <Fuel className="h-4 w-4" />
-                    <span>Best nearby</span>
-                  </button>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -1671,9 +1626,55 @@ export default function ClientMap({
       {hasStations && (
         <div
           ref={desktopPriceGuideRef}
-          className="pointer-events-auto absolute bottom-24 left-3 right-3 z-20 hidden sm:block sm:bottom-6 sm:left-auto sm:right-6"
+          className="absolute bottom-24 left-3 right-3 z-20 hidden sm:flex sm:bottom-6 sm:left-auto sm:right-6 sm:items-end sm:justify-end sm:gap-3"
         >
-          <div className="mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md sm:mx-0 sm:w-auto sm:max-w-none">
+          {showDesktopBestNearbyButton && activeBestNearby && (
+            <>
+              {showDesktopBestNearbyCard ? (
+                <div className="pointer-events-auto max-w-sm rounded-2xl border border-emerald-200 bg-emerald-50/90 px-4 py-3 text-sm text-emerald-900 shadow-lg backdrop-blur-md">
+                  <div className="flex flex-col gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center justify-between gap-3">
+                        <h3 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                          Best nearby
+                        </h3>
+                        <button
+                          type="button"
+                          onClick={handleCloseBestNearby}
+                          className="rounded-full p-1 text-emerald-500 transition-colors hover:bg-emerald-100 hover:text-emerald-700"
+                          aria-label="Hide best nearby"
+                          title="Hide best nearby"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <p className="mt-2 min-w-0">{bestNearbySummary}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleShowBestNearby}
+                      className="inline-flex shrink-0 items-center justify-center rounded-xl border border-emerald-300 bg-white px-3 py-2 text-sm font-medium text-emerald-800 transition-colors hover:bg-emerald-100"
+                    >
+                      Show on map
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleToggleBestNearby}
+                  className="pointer-events-auto inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm font-medium text-blue-700 shadow-lg backdrop-blur-md transition-colors hover:bg-blue-100"
+                  aria-expanded={showDesktopBestNearbyCard}
+                  aria-label="Show best nearby"
+                >
+                  <Fuel className="h-4 w-4" />
+                  <span>Best nearby</span>
+                </button>
+              )}
+            </>
+          )}
+
+          <div className="pointer-events-auto mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md sm:mx-0 sm:w-auto sm:max-w-none">
             <h3 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-gray-500">
               Price Guide
             </h3>
