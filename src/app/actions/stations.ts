@@ -5,6 +5,7 @@ import { unstable_cache } from 'next/cache';
 
 import { NATIONAL_PRICE_BENCHMARK_TAG } from '@/lib/cache-tags';
 import { getPriceScale } from '@/lib/price-colors';
+import { normalizeFuelPriceValue } from '@/lib/price-normalization';
 import { prisma } from '@/lib/prisma';
 import { normalizeUkStationCoordinates } from '@/lib/station-coordinates';
 
@@ -57,6 +58,10 @@ type StationMapQueryRecord = Prisma.StationGetPayload<{
   select: typeof stationMapSelect;
 }>;
 
+type StationDetailQueryRecord = Prisma.StationGetPayload<{
+  include: typeof stationDetailInclude;
+}>;
+
 export type StationMapPriceRecord = {
   fuelType: string;
   price: number;
@@ -72,9 +77,15 @@ export type StationMapRecord = {
   fallbackPrices: StationMapPriceRecord[];
 };
 
-export type StationDetailRecord = Prisma.StationGetPayload<{
-  include: typeof stationDetailInclude;
-}>;
+export type StationDetailRecord = Omit<
+  StationDetailQueryRecord,
+  'lat' | 'lng' | 'currentPrices' | 'prices'
+> & {
+  lat: number;
+  lng: number;
+  currentPrices: StationMapPriceRecord[];
+  prices: StationMapPriceRecord[];
+};
 
 type FuelPriceScale = ReturnType<typeof getPriceScale>;
 
@@ -173,10 +184,16 @@ function normalizeMapPriceRecord(price: {
   fuelType: string;
   price: number;
   timestamp: Date;
-}): StationMapPriceRecord {
+}): StationMapPriceRecord | null {
+  const normalized = normalizeFuelPriceValue(price.price);
+
+  if (normalized === null) {
+    return null;
+  }
+
   return {
     fuelType: price.fuelType.toLowerCase(),
-    price: price.price,
+    price: normalized.normalizedPrice,
     timestamp: price.timestamp,
   };
 }
@@ -342,6 +359,10 @@ function getFallbackPrices(prices: StationMapQueryRecord['prices']) {
   for (const price of prices) {
     const normalizedPrice = normalizeMapPriceRecord(price);
 
+    if (!normalizedPrice) {
+      continue;
+    }
+
     if (!latestByFuel.has(normalizedPrice.fuelType)) {
       latestByFuel.set(normalizedPrice.fuelType, normalizedPrice);
     }
@@ -366,8 +387,31 @@ function toStationMapRecord(station: StationMapQueryRecord): StationMapRecord | 
     lng: coordinates.lng,
     currentPrices: station.currentPrices
       .map(normalizeMapPriceRecord)
+      .filter((price): price is StationMapPriceRecord => price !== null)
       .sort((left, right) => left.fuelType.localeCompare(right.fuelType)),
     fallbackPrices: getFallbackPrices(station.prices),
+  };
+}
+
+function toStationDetailRecord(station: StationDetailQueryRecord): StationDetailRecord | null {
+  const coordinates = normalizeUkStationCoordinates(station.lat, station.lng, station.postcode);
+
+  if (!coordinates) {
+    return null;
+  }
+
+  return {
+    ...station,
+    lat: coordinates.lat,
+    lng: coordinates.lng,
+    currentPrices: station.currentPrices
+      .map(normalizeMapPriceRecord)
+      .filter((price): price is StationMapPriceRecord => price !== null)
+      .sort((left, right) => left.fuelType.localeCompare(right.fuelType)),
+    prices: station.prices
+      .map(normalizeMapPriceRecord)
+      .filter((price): price is StationMapPriceRecord => price !== null)
+      .sort((left, right) => right.timestamp.getTime() - left.timestamp.getTime()),
   };
 }
 
@@ -686,5 +730,9 @@ export async function getStationDetails(id: string): Promise<StationDetailRecord
     include: stationDetailInclude,
   });
 
-  return station;
+  if (!station) {
+    return null;
+  }
+
+  return toStationDetailRecord(station);
 }

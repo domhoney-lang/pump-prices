@@ -133,6 +133,8 @@ Optional only if you wire Supabase features back into the app:
 - For scheduled imports, call `/api/sync` with either `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
 - For a one-off full price backfill, run `npm run sync:fuel-data -- --mode=full-price-backfill`.
 - For an online-only one-off backfill through AWS Lambda, invoke the worker with `{"mode":"full-price-backfill"}`.
+- Sync imports normalize mixed-unit prices before writing to the database. Pound-style values such as `1.549` are converted to `154.9`, and missing-decimal values such as `1819` are converted to `181.9`. Implausible prices are skipped and counted in sync logs.
+- To repair existing mixed-unit rows already stored in the database, run `npm run repair:price-units` for a dry run, then `npm run repair:price-units -- --apply` to persist the fixes.
 
 ## Freshness Labels
 

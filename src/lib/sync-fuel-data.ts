@@ -7,6 +7,7 @@ import {
   type SupportedFuelType,
 } from "@/lib/fuel-api";
 import { Prisma } from "@prisma/client";
+import { normalizeFuelPriceValue } from "@/lib/price-normalization";
 import { prisma } from "@/lib/prisma";
 import { normalizeUkStationCoordinates } from "@/lib/station-coordinates";
 
@@ -48,6 +49,8 @@ export type FuelSyncResult =
         syncedStations: number;
         insertedPriceChanges: number;
         syncedCurrentPrices: number;
+        normalizedIncomingPrices: number;
+        skippedInvalidPrices: number;
         durationSeconds: number;
         incrementalStartTimestamp: string | null;
       };
@@ -64,6 +67,8 @@ type SyncLogPayload = {
   syncedStations: number;
   insertedPriceChanges: number;
   syncedCurrentPrices: number;
+  normalizedIncomingPrices: number;
+  skippedInvalidPrices: number;
   durationSeconds: number;
   incrementalStartTimestamp: string | null;
   success: boolean;
@@ -220,28 +225,45 @@ async function upsertForecourtBatch(batch: FuelFinderForecourt[], knownStationId
 
 function normalizePriceBatch(batch: FuelFinderPriceStation[]) {
   const rows: PriceInsertCandidate[] = [];
+  let normalizedIncomingPrices = 0;
+  let skippedInvalidPrices = 0;
 
   for (const station of batch) {
     for (const fuelPrice of station.fuel_prices ?? []) {
       const fuelType = normalizeFuelType(fuelPrice.fuel_type);
-      const price = toNumber(fuelPrice.price);
+      const rawPrice = toNumber(fuelPrice.price);
       const timestamp = getPriceTimestamp(fuelPrice);
 
-      if (!fuelType || price === null || !timestamp) {
+      if (!fuelType || rawPrice === null || !timestamp) {
         continue;
+      }
+
+      const normalizedPrice = normalizeFuelPriceValue(rawPrice);
+
+      if (!normalizedPrice) {
+        skippedInvalidPrices += 1;
+        continue;
+      }
+
+      if (normalizedPrice.reason !== "already-pence") {
+        normalizedIncomingPrices += 1;
       }
 
       rows.push({
         stationId: station.node_id,
         fuelType,
-        price,
+        price: normalizedPrice.normalizedPrice,
         timestamp,
       });
     }
   }
 
   rows.sort((left, right) => left.timestamp.getTime() - right.timestamp.getTime());
-  return rows;
+  return {
+    rows,
+    normalizedIncomingPrices,
+    skippedInvalidPrices,
+  };
 }
 
 async function insertPriceHistoryRows(rows: PriceInsertCandidate[]) {
@@ -293,12 +315,15 @@ async function resetPriceDataForBackfill() {
 }
 
 async function insertChangedPrices(batch: FuelFinderPriceStation[], knownStationIds: Set<string>) {
-  const incomingRows = normalizePriceBatch(batch).filter((row) => knownStationIds.has(row.stationId));
+  const normalizedBatch = normalizePriceBatch(batch);
+  const incomingRows = normalizedBatch.rows.filter((row) => knownStationIds.has(row.stationId));
 
   if (incomingRows.length === 0) {
     return {
       insertedPriceChanges: 0,
       syncedCurrentPrices: 0,
+      normalizedIncomingPrices: normalizedBatch.normalizedIncomingPrices,
+      skippedInvalidPrices: normalizedBatch.skippedInvalidPrices,
     };
   }
 
@@ -352,6 +377,8 @@ async function insertChangedPrices(batch: FuelFinderPriceStation[], knownStation
   return {
     insertedPriceChanges: rowsToInsert.length,
     syncedCurrentPrices: snapshotRows.length,
+    normalizedIncomingPrices: normalizedBatch.normalizedIncomingPrices,
+    skippedInvalidPrices: normalizedBatch.skippedInvalidPrices,
   };
 }
 
@@ -363,6 +390,8 @@ export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): P
   let syncedStations = 0;
   let insertedPriceChanges = 0;
   let syncedCurrentPrices = 0;
+  let normalizedIncomingPrices = 0;
+  let skippedInvalidPrices = 0;
   let incrementalStartTimestamp: string | undefined;
 
   try {
@@ -384,6 +413,8 @@ export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): P
       const batchResult = await insertChangedPrices(priceBatch, knownStationIds);
       insertedPriceChanges += batchResult.insertedPriceChanges;
       syncedCurrentPrices += batchResult.syncedCurrentPrices;
+      normalizedIncomingPrices += batchResult.normalizedIncomingPrices;
+      skippedInvalidPrices += batchResult.skippedInvalidPrices;
     }
 
     const durationSeconds = Number(((Date.now() - startedAt) / 1000).toFixed(1));
@@ -394,6 +425,8 @@ export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): P
       syncedStations,
       insertedPriceChanges,
       syncedCurrentPrices,
+      normalizedIncomingPrices,
+      skippedInvalidPrices,
       durationSeconds,
       incrementalStartTimestamp: incrementalStartTimestamp ?? null,
     };
@@ -434,6 +467,8 @@ export async function syncFuelDataInternal(options: SyncFuelDataOptions = {}): P
       syncedStations,
       insertedPriceChanges,
       syncedCurrentPrices,
+      normalizedIncomingPrices,
+      skippedInvalidPrices,
       durationSeconds,
       incrementalStartTimestamp: incrementalStartTimestamp ?? null,
       success: false,

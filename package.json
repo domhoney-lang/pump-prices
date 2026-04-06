@@ -9,7 +9,8 @@
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
-    "sync:fuel-data": "tsx scripts/sync-fuel-data.ts"
+    "sync:fuel-data": "tsx scripts/sync-fuel-data.ts",
+    "repair:price-units": "tsx scripts/repair-price-units.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.101.1",
