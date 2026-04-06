@@ -40,6 +40,7 @@ Example:
 ```env
 DATABASE_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable&pgbouncer=true&statement_cache_size=0"
 DIRECT_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable"
+LOCATIONIQ_API_KEY=""
 ```
 
 5. Push the Prisma schema into the local database:
@@ -118,6 +119,7 @@ Set these values before syncing live data:
 - `DIRECT_URL`
 - `FUEL_FINDER_CLIENT_ID`
 - `FUEL_FINDER_CLIENT_SECRET`
+- `LOCATIONIQ_API_KEY` for location search
 - `CRON_SECRET` for the scheduled sync endpoint
 
 For local development, `DATABASE_URL` and `DIRECT_URL` can point to the local Prisma dev database instead of a hosted Postgres instance.
@@ -222,6 +224,7 @@ Set these Vercel environment variables before the first production build:
 - `DIRECT_URL`
 - `FUEL_FINDER_CLIENT_ID`
 - `FUEL_FINDER_CLIENT_SECRET`
+- `LOCATIONIQ_API_KEY`
 - `CRON_SECRET`
 
 Optional only if you later enable Supabase-backed features:
