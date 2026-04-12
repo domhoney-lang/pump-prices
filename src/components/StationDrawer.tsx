@@ -18,6 +18,8 @@ import {
   getPriceTone,
 } from '@/lib/price-colors';
 
+const PRICE_HISTORY_WINDOW_DAYS = 30;
+
 type FocusLocation = {
   lat: number;
   lng: number;
@@ -164,21 +166,12 @@ export default function StationDrawer({
 }: StationDrawerProps) {
   if (!station) return null;
 
-  const relevantPrices = station.prices
-    .filter((price) => price.fuelType.toLowerCase() === fuelType.toLowerCase())
-    .sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
-
-  const sevenDaysAgo = subDays(new Date(), 7);
-  const chartData = relevantPrices
-    .filter((price) => new Date(price.timestamp) >= sevenDaysAgo)
-    .map((price) => ({
-      date: format(new Date(price.timestamp), 'MMM dd'),
-      price: price.price,
-    }));
-
   const latestCurrentPrice = station.currentPrices.find(
     (price) => price.fuelType.toLowerCase() === fuelType.toLowerCase()
   );
+  const relevantPrices = station.prices
+    .filter((price) => price.fuelType.toLowerCase() === fuelType.toLowerCase())
+    .sort((left, right) => new Date(left.timestamp).getTime() - new Date(right.timestamp).getTime());
   const priceTimeline = [
     ...relevantPrices.map((price) => ({
       price: price.price,
@@ -200,6 +193,13 @@ export default function StationDrawer({
         entry.price !== entries[index - 1]?.price ||
         entry.timestamp.getTime() !== entries[index - 1]?.timestamp.getTime(),
     );
+  const priceHistoryWindowStart = subDays(new Date(), PRICE_HISTORY_WINDOW_DAYS);
+  const chartData = priceTimeline
+    .filter((entry) => entry.timestamp >= priceHistoryWindowStart)
+    .map((entry) => ({
+      date: format(entry.timestamp, 'MMM dd'),
+      price: entry.price,
+    }));
   const latestTimelineEntry = priceTimeline.at(-1) ?? null;
   const previousTimelineEntry = priceTimeline.at(-2) ?? null;
   const latestPrice = latestTimelineEntry?.price ?? null;
@@ -254,7 +254,7 @@ export default function StationDrawer({
             <Drawer.Description className="sr-only">
               {station.address}
               {station.postcode ? `, ${station.postcode}` : ''}. Showing {fuelType} pricing and
-              the last 7 days of price history.
+              the last {PRICE_HISTORY_WINDOW_DAYS} days of price history.
             </Drawer.Description>
             <div className="relative mb-8 flex items-center justify-center">
               <div className="h-1.5 w-12 flex-shrink-0 rounded-full bg-gray-200" />
@@ -337,11 +337,13 @@ export default function StationDrawer({
 
               <div className="mb-4 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900 tracking-wide uppercase">Price History</h3>
-                <span className="text-xs font-medium px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full">Last 7 Days</span>
+                <span className="text-xs font-medium px-2.5 py-1 bg-gray-100 text-gray-600 rounded-full">
+                  Last {PRICE_HISTORY_WINDOW_DAYS} Days
+                </span>
               </div>
               
               <div className="h-56 w-full bg-white border border-gray-100 rounded-2xl pt-5 pb-3 pr-5 shadow-sm">
-                {chartData.length > 1 ? (
+                {chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={chartData}>
                       <XAxis 
@@ -385,7 +387,7 @@ export default function StationDrawer({
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex items-center justify-center h-full text-gray-400 text-sm font-medium">
-                    Not enough data for the last 7 days.
+                    No price data for the last {PRICE_HISTORY_WINDOW_DAYS} days.
                   </div>
                 )}
               </div>

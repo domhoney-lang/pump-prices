@@ -5,6 +5,14 @@ Changelog:
 
 ## Local Development
 
+THIS APP DOES NOT RUN SAFELY ON LOCAL
+
+## Environment Safety
+
+Before running any Prisma or sync command locally, confirm `DATABASE_URL` and `DIRECT_URL` point at your local Prisma dev database.
+
+Keep `npx prisma db push`, `npm run sync:fuel-data`, and `npm run sync:fuel-data -- --mode=full-price-backfill` pointed at a local database unless you are intentionally running them in a hosted environment.
+
 ### Quick Start
 
 Use this flow if you want to run the app entirely on your machine with a local Prisma dev database.
@@ -20,6 +28,8 @@ npm install
 ```bash
 cp .env.example .env.local
 ```
+
+If `.env.local` already exists, open it and verify both `DATABASE_URL` and `DIRECT_URL` still point to `localhost` before continuing.
 
 3. Start a local Prisma dev database:
 
@@ -43,6 +53,8 @@ DIRECT_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disa
 LOCATIONIQ_API_KEY=""
 ```
 
+Do not continue until both values point to `localhost` or `127.0.0.1`.
+
 5. Push the Prisma schema into the local database:
 
 ```bash
@@ -56,6 +68,8 @@ npx prisma db push
 ```bash
 npm run sync:fuel-data -- --mode=full-price-backfill
 ```
+
+Only run this command against a local dev database unless you have explicitly chosen a hosted environment for the backfill.
 
 7. Start the Next.js app:
 
@@ -89,11 +103,10 @@ npm run dev
 npm run sync:fuel-data
 ```
 
+This command writes to whichever database `DATABASE_URL` targets. Re-check `.env.local` first if you have recently copied secrets or switched environments.
+
 If the map loads but many markers show `N/A`, your local database probably has station records without current prices yet. Run the full backfill again:
 
-```bash
-npm run sync:fuel-data -- --mode=full-price-backfill
-```
 
 ### Starting The App Locally
 
@@ -135,6 +148,8 @@ Optional only if you wire Supabase features back into the app:
 - For scheduled imports, call `/api/sync` with either `Authorization: Bearer <CRON_SECRET>` or `x-cron-secret: <CRON_SECRET>`.
 - For a one-off full price backfill, run `npm run sync:fuel-data -- --mode=full-price-backfill`.
 - For an online-only one-off backfill through AWS Lambda, invoke the worker with `{"mode":"full-price-backfill"}`.
+- Treat `full-price-backfill` as a repair operation, not a routine sync.
+- Before running any sync manually, print or inspect `DATABASE_URL` and make sure you know which database you are about to modify.
 - Sync imports normalize mixed-unit prices before writing to the database. Pound-style values such as `1.549` are converted to `154.9`, and missing-decimal values such as `1819` are converted to `181.9`. Implausible prices are skipped and counted in sync logs.
 - To repair existing mixed-unit rows already stored in the database, run `npm run repair:price-units` for a dry run, then `npm run repair:price-units -- --apply` to persist the fixes.
 
