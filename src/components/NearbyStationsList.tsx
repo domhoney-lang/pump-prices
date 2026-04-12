@@ -60,14 +60,14 @@ function getDistanceMiles(origin: FocusLocation, station: Pick<StationMapRecord,
 function getFreshnessTone(updatedAt: Date) {
   const ageHours = (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60);
 
-  if (ageHours < 24) {
+  if (ageHours < 48) {
     return {
       badgeClassName: 'bg-emerald-100 text-emerald-700',
       label: 'Fresh' as const,
     };
   }
 
-  if (ageHours < 48) {
+  if (ageHours < 144) {
     return {
       badgeClassName: 'bg-amber-100 text-amber-700',
       label: 'Still good' as const,

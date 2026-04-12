@@ -157,9 +157,9 @@ Optional only if you wire Supabase features back into the app:
 
 The station drawer classifies unleaded and diesel price timestamps using these bands:
 
-- `Fresh`: under 24 hours old
-- `Still good`: 24 to 48 hours old
-- `Stale`: over 48 hours old
+- `Fresh`: under 2 days old
+- `Still good`: 2 to 6 days old
+- `Stale`: over 6 days old
 
 ## GitHub Actions Scheduler
 
