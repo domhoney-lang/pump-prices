@@ -256,7 +256,7 @@ export default function StationDrawer({
               {station.postcode ? `, ${station.postcode}` : ''}. Showing {fuelType} pricing and
               the last {PRICE_HISTORY_WINDOW_DAYS} days of price history.
             </Drawer.Description>
-            <div className="relative mb-8 flex items-center justify-center">
+            <div className="relative mb-5 flex items-center justify-center">
               <div className="h-1.5 w-12 flex-shrink-0 rounded-full bg-gray-200" />
               <button
                 type="button"
@@ -269,29 +269,34 @@ export default function StationDrawer({
             </div>
 
             <div className="max-w-md mx-auto">
-              <div className="mb-6">
-                <h2 className="text-2xl font-bold text-gray-900 tracking-tight mb-1">{station.brand || 'Unknown Brand'}</h2>
-                <p className="text-gray-500 text-sm leading-relaxed">
-                  {station.address}{station.postcode ? `, ${station.postcode}` : ''}
-                </p>
-                <div className="mt-3 flex items-center gap-2">
-                  {distanceMiles !== null && (
-                    <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">
-                      <MapPin className="h-3.5 w-3.5" />
-                      <span>{formatDistanceMiles(distanceMiles)}</span>
-                    </div>
-                  )}
-                  <a
-                    href={getDirectionsUrl(station.lat, station.lng)}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open directions in Google Maps"
-                    title="Open in Google Maps"
-                    className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
-                  >
-                    <Navigation className="h-4 w-4" />
-                  </a>
+              <div className="mb-4">
+                <div className="flex items-start justify-between gap-3">
+                  <h2 className="min-w-0 text-2xl font-bold tracking-tight text-gray-900">
+                    {station.brand || 'Unknown Brand'}
+                  </h2>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {distanceMiles !== null && (
+                      <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">
+                        <MapPin className="h-3.5 w-3.5" />
+                        <span>{formatDistanceMiles(distanceMiles)}</span>
+                      </div>
+                    )}
+                    <a
+                      href={getDirectionsUrl(station.lat, station.lng)}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open directions in Google Maps"
+                      title="Open in Google Maps"
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                    >
+                      <Navigation className="h-4 w-4" />
+                    </a>
+                  </div>
                 </div>
+                <p className="mt-2 text-sm uppercase tracking-wide text-gray-500">
+                  {station.address}
+                  {station.postcode ? `, ${station.postcode}` : ''}
+                </p>
               </div>
 
               <div
