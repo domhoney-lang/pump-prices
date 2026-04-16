@@ -1,7 +1,7 @@
 export const FUEL_API_BASE = "https://www.fuel-finder.service.gov.uk/api/v1";
 const FUEL_FINDER_BATCH_SIZE = 500;
-const FUEL_FINDER_TOKEN_MAX_ATTEMPTS = 3;
-const FUEL_FINDER_TOKEN_RETRY_DELAY_MS = 1_000;
+const FUEL_FINDER_REQUEST_MAX_ATTEMPTS = 3;
+const FUEL_FINDER_RETRY_DELAY_MS = 1_000;
 const FUEL_FINDER_TRANSIENT_STATUSES = new Set([502, 503, 504]);
 
 export type SupportedFuelType = "unleaded" | "diesel";
@@ -201,7 +201,7 @@ export class FuelFinderClient {
 
     let lastError: FuelFinderApiError | null = null;
 
-    for (let attempt = 1; attempt <= FUEL_FINDER_TOKEN_MAX_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= FUEL_FINDER_REQUEST_MAX_ATTEMPTS; attempt += 1) {
       let response: Response;
 
       try {
@@ -217,16 +217,16 @@ export class FuelFinderClient {
         const details = error instanceof Error ? error.message : String(error);
         lastError = new FuelFinderApiError("Failed to reach Fuel Finder token endpoint", 0, details);
 
-        if (attempt < FUEL_FINDER_TOKEN_MAX_ATTEMPTS) {
+        if (attempt < FUEL_FINDER_REQUEST_MAX_ATTEMPTS) {
           console.warn(
             "[fuel-sync] Retrying Fuel Finder token fetch after network error",
             JSON.stringify({
               attempt,
-              maxAttempts: FUEL_FINDER_TOKEN_MAX_ATTEMPTS,
+              maxAttempts: FUEL_FINDER_REQUEST_MAX_ATTEMPTS,
               details,
             }),
           );
-          await delay(FUEL_FINDER_TOKEN_RETRY_DELAY_MS * attempt);
+          await delay(FUEL_FINDER_RETRY_DELAY_MS * attempt);
           continue;
         }
 
@@ -244,18 +244,18 @@ export class FuelFinderClient {
 
         if (
           FUEL_FINDER_TRANSIENT_STATUSES.has(response.status) &&
-          attempt < FUEL_FINDER_TOKEN_MAX_ATTEMPTS
+          attempt < FUEL_FINDER_REQUEST_MAX_ATTEMPTS
         ) {
           console.warn(
             "[fuel-sync] Retrying Fuel Finder token fetch after transient upstream error",
             JSON.stringify({
               attempt,
-              maxAttempts: FUEL_FINDER_TOKEN_MAX_ATTEMPTS,
+              maxAttempts: FUEL_FINDER_REQUEST_MAX_ATTEMPTS,
               status: response.status,
               diagnostics: details,
             }),
           );
-          await delay(FUEL_FINDER_TOKEN_RETRY_DELAY_MS * attempt);
+          await delay(FUEL_FINDER_RETRY_DELAY_MS * attempt);
           continue;
         }
 
@@ -292,27 +292,76 @@ export class FuelFinderClient {
       }
     }
 
-    let response: Response;
+    let lastError: FuelFinderApiError | null = null;
 
-    try {
-      response = await fetch(url.toString(), {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        cache: "no-store",
-      });
-    } catch (error) {
-      const details = error instanceof Error ? error.message : String(error);
-      throw new FuelFinderApiError(`Failed to reach Fuel Finder endpoint for ${path}`, 0, details);
+    for (let attempt = 1; attempt <= FUEL_FINDER_REQUEST_MAX_ATTEMPTS; attempt += 1) {
+      let response: Response;
+
+      try {
+        response = await fetch(url.toString(), {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        });
+      } catch (error) {
+        const details = error instanceof Error ? error.message : String(error);
+        lastError = new FuelFinderApiError(
+          `Failed to reach Fuel Finder endpoint for ${path}`,
+          0,
+          details,
+        );
+
+        if (attempt < FUEL_FINDER_REQUEST_MAX_ATTEMPTS) {
+          console.warn(
+            "[fuel-sync] Retrying Fuel Finder data request after network error",
+            JSON.stringify({
+              attempt,
+              maxAttempts: FUEL_FINDER_REQUEST_MAX_ATTEMPTS,
+              path,
+              url: url.toString(),
+              details,
+            }),
+          );
+          await delay(FUEL_FINDER_RETRY_DELAY_MS * attempt);
+          continue;
+        }
+
+        throw lastError;
+      }
+
+      if (!response.ok) {
+        const responseBody = await response.text().catch(() => "");
+        const isTransientStatus = FUEL_FINDER_TRANSIENT_STATUSES.has(response.status);
+        const details = isTransientStatus
+          ? getResponseDiagnostics(response, responseBody)
+          : responseBody || undefined;
+        const message = `Fuel Finder request failed for ${path} (${response.status})`;
+        lastError = new FuelFinderApiError(message, response.status, details);
+
+        if (isTransientStatus && attempt < FUEL_FINDER_REQUEST_MAX_ATTEMPTS) {
+          console.warn(
+            "[fuel-sync] Retrying Fuel Finder data request after transient upstream error",
+            JSON.stringify({
+              attempt,
+              maxAttempts: FUEL_FINDER_REQUEST_MAX_ATTEMPTS,
+              path,
+              url: url.toString(),
+              status: response.status,
+              diagnostics: details,
+            }),
+          );
+          await delay(FUEL_FINDER_RETRY_DELAY_MS * attempt);
+          continue;
+        }
+
+        throw lastError;
+      }
+
+      return (await response.json()) as T;
     }
 
-    if (!response.ok) {
-      const responseBody = await response.text().catch(() => "");
-      const message = `Fuel Finder request failed for ${path} (${response.status})`;
-      throw new FuelFinderApiError(message, response.status, responseBody || undefined);
-    }
-
-    return (await response.json()) as T;
+    throw lastError ?? new FuelFinderApiError(`Fuel Finder request failed for ${path}`, 0);
   }
 
   async fetchForecourtBatch(batchNumber: number, effectiveStartTimestamp?: string) {
