@@ -12,6 +12,7 @@ import { normalizeUkStationCoordinates } from '@/lib/station-coordinates';
 const MAP_STATION_LIMIT = 500;
 const MAP_FALLBACK_PRICE_WINDOW = 6;
 const NEARBY_BENCHMARK_RADIUS_MILES = 5;
+const NATIONAL_PRICE_HISTORY_WINDOW_DAYS = 30;
 const stationMapSelect = {
   id: true,
   brand: true,
@@ -89,15 +90,24 @@ export type StationDetailRecord = Omit<
 
 type FuelPriceScale = ReturnType<typeof getPriceScale>;
 
-type FuelType = 'unleaded' | 'diesel';
+const FUEL_TYPES = ['unleaded', 'diesel'] as const;
+
+type FuelType = (typeof FUEL_TYPES)[number];
 
 export type FuelBenchmarkSummary = {
   averagePrice: number | null;
   stationCount: number;
 };
 
+export type FuelBenchmarkHistoryPoint = {
+  date: string;
+  averagePrice: number;
+  stationCount: number;
+};
+
 export type NationalPriceBenchmark = {
   fuelSummaries: Record<FuelType, FuelBenchmarkSummary>;
+  fuelHistory: Record<FuelType, FuelBenchmarkHistoryPoint[]>;
 };
 
 export type PriceBenchmark = {
@@ -448,10 +458,106 @@ function buildFuelBenchmarkSummary(
   };
 }
 
-async function buildNationalBenchmark(): Promise<NationalPriceBenchmark> {
-  const stationRows = await prisma.station.findMany({
-    select: stationMapSelect,
+function isFuelType(value: string): value is FuelType {
+  return FUEL_TYPES.includes(value as FuelType);
+}
+
+function getNationalHistoryWindowStart() {
+  const historyWindowStart = new Date();
+  historyWindowStart.setUTCHours(0, 0, 0, 0);
+  historyWindowStart.setUTCDate(
+    historyWindowStart.getUTCDate() - (NATIONAL_PRICE_HISTORY_WINDOW_DAYS - 1),
+  );
+  return historyWindowStart;
+}
+
+function getUtcDayKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+async function buildNationalBenchmarkHistory(): Promise<
+  Record<FuelType, FuelBenchmarkHistoryPoint[]>
+> {
+  const historyRows = await prisma.priceHistory.findMany({
+    where: {
+      fuelType: {
+        in: [...FUEL_TYPES],
+      },
+      timestamp: {
+        gte: getNationalHistoryWindowStart(),
+      },
+    },
+    select: {
+      stationId: true,
+      fuelType: true,
+      price: true,
+      timestamp: true,
+    },
+    orderBy: [
+      {
+        timestamp: 'asc',
+      },
+      {
+        stationId: 'asc',
+      },
+    ],
   });
+  const historyByFuel = {
+    unleaded: new Map<string, Map<string, number>>(),
+    diesel: new Map<string, Map<string, number>>(),
+  } satisfies Record<FuelType, Map<string, Map<string, number>>>;
+
+  for (const row of historyRows) {
+    const fuelType = row.fuelType.toLowerCase();
+
+    if (!isFuelType(fuelType)) {
+      continue;
+    }
+
+    const normalizedPrice = normalizeFuelPriceValue(row.price);
+
+    if (!normalizedPrice) {
+      continue;
+    }
+
+    const dayKey = getUtcDayKey(row.timestamp);
+    const stationPricesForDay = historyByFuel[fuelType].get(dayKey);
+
+    if (stationPricesForDay) {
+      stationPricesForDay.set(row.stationId, normalizedPrice.normalizedPrice);
+      continue;
+    }
+
+    historyByFuel[fuelType].set(dayKey, new Map([[row.stationId, normalizedPrice.normalizedPrice]]));
+  }
+
+  const toHistorySeries = (historyForFuel: Map<string, Map<string, number>>) =>
+    Array.from(historyForFuel.entries())
+      .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
+      .map(([date, stationPrices]) => {
+        const prices = Array.from(stationPrices.values());
+        const totalPrice = prices.reduce((sum, price) => sum + price, 0);
+
+        return {
+          date,
+          averagePrice: totalPrice / prices.length,
+          stationCount: stationPrices.size,
+        } satisfies FuelBenchmarkHistoryPoint;
+      });
+
+  return {
+    unleaded: toHistorySeries(historyByFuel.unleaded),
+    diesel: toHistorySeries(historyByFuel.diesel),
+  };
+}
+
+async function buildNationalBenchmark(): Promise<NationalPriceBenchmark> {
+  const [stationRows, fuelHistory] = await Promise.all([
+    prisma.station.findMany({
+      select: stationMapSelect,
+    }),
+    buildNationalBenchmarkHistory(),
+  ]);
   const stations = stationRows
     .map(toStationMapRecord)
     .filter((station): station is StationMapRecord => station !== null);
@@ -461,6 +567,7 @@ async function buildNationalBenchmark(): Promise<NationalPriceBenchmark> {
       unleaded: buildFuelBenchmarkSummary(stations, 'unleaded'),
       diesel: buildFuelBenchmarkSummary(stations, 'diesel'),
     },
+    fuelHistory,
   };
 }
 

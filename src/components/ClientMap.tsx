@@ -21,6 +21,7 @@ import {
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, Info, List, LocateFixed, Search, X } from 'lucide-react';
+import { Line, LineChart, ResponsiveContainer } from 'recharts';
 
 import {
   searchLocation,
@@ -93,6 +94,11 @@ const MOBILE_OVERLAY_STACK_GAP_PX = 16;
 const MOBILE_NEARBY_LIST_HIDDEN_OFFSET_PX = 16;
 const USER_LOCATION_ACTIVE_RADIUS_MILES = 0.25;
 const USER_LOCATION_FOCUS_ZOOM = 13;
+const priceGuideDateFormatter = new Intl.DateTimeFormat('en-GB', {
+  day: 'numeric',
+  month: 'short',
+  timeZone: 'UTC',
+});
 
 function areOverlayRectsEqual(left: OverlayRect[], right: OverlayRect[]) {
   if (left.length !== right.length) {
@@ -178,6 +184,81 @@ function getDirectionArrow(direction: string) {
     default:
       return '↖';
   }
+}
+
+function formatPriceGuideDate(date: string) {
+  return priceGuideDateFormatter.format(new Date(`${date}T00:00:00.000Z`));
+}
+
+function PriceGuideSparkline({
+  fuelType,
+  nationalPriceBenchmark,
+}: {
+  fuelType: 'unleaded' | 'diesel';
+  nationalPriceBenchmark: NationalPriceBenchmark | null;
+}) {
+  const history = nationalPriceBenchmark?.fuelHistory[fuelType] ?? [];
+  const latestPoint = history.at(-1) ?? null;
+  const firstPoint = history[0] ?? null;
+  const trendDelta =
+    latestPoint && firstPoint ? latestPoint.averagePrice - firstPoint.averagePrice : null;
+  const trendText =
+    trendDelta === null
+      ? null
+      : Math.abs(trendDelta) < 0.05
+        ? 'Flat vs 30 days ago'
+        : `${trendDelta > 0 ? '+' : '-'}${Math.abs(trendDelta).toFixed(1)}p vs 30 days ago`;
+  const trendClassName =
+    trendDelta === null || Math.abs(trendDelta) < 0.05
+      ? 'text-gray-500'
+      : trendDelta > 0
+        ? 'text-rose-600'
+        : 'text-emerald-600';
+
+  return (
+    <div className="mt-3 border-t border-gray-100 pt-3">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
+            UK {fuelType} trend
+          </p>
+          <p className="mt-1 text-lg font-semibold text-gray-900">
+            {latestPoint ? `${latestPoint.averagePrice.toFixed(1)}p` : 'N/A'}
+          </p>
+        </div>
+        {trendText ? (
+          <p className={`text-right text-xs font-medium ${trendClassName}`}>{trendText}</p>
+        ) : null}
+      </div>
+
+      {history.length > 0 ? (
+        <>
+          <div className="mt-2 h-16 w-full" aria-label={`30-day UK ${fuelType} average price trend`}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={history} margin={{ top: 6, right: 2, bottom: 6, left: 2 }}>
+                <Line
+                  type="monotone"
+                  dataKey="averagePrice"
+                  stroke="#2563eb"
+                  strokeWidth={2.5}
+                  dot={false}
+                  activeDot={{ r: 4, stroke: '#2563eb', strokeWidth: 2, fill: '#ffffff' }}
+                  isAnimationActive={false}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-gray-500">
+            <span>{formatPriceGuideDate(history[0].date)}</span>
+            <span className="truncate">30-day UK daily avg</span>
+            <span>{formatPriceGuideDate(history.at(-1)?.date ?? history[0].date)}</span>
+          </div>
+        </>
+      ) : (
+        <p className="mt-2 text-xs text-gray-500">UK trend data is unavailable right now.</p>
+      )}
+    </div>
+  );
 }
 
 function getGeolocationErrorMessage(error: GeolocationPositionError) {
@@ -1500,6 +1581,10 @@ export default function ClientMap({
                 <span className="text-xs font-medium leading-4 text-gray-700">Most Expensive</span>
               </div>
             </div>
+            <PriceGuideSparkline
+              fuelType={fuelType}
+              nationalPriceBenchmark={initialNationalPriceBenchmark}
+            />
           </div>
         </div>
       )}
@@ -1674,11 +1759,11 @@ export default function ClientMap({
             </>
           )}
 
-          <div className="pointer-events-auto mx-auto flex w-full max-w-lg items-center gap-4 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md sm:mx-0 sm:w-auto sm:max-w-none">
-            <h3 className="shrink-0 text-xs font-semibold uppercase tracking-wider text-gray-500">
+          <div className="pointer-events-auto mx-auto flex w-full max-w-lg flex-col gap-3 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md sm:mx-0 sm:w-[28rem] sm:max-w-[28rem]">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
               Price Guide
             </h3>
-            <div className="flex min-w-0 flex-1 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="flex min-w-0 items-center gap-2">
                 <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
                 <span className="truncate text-xs font-medium text-gray-700 sm:text-sm">
@@ -1698,6 +1783,10 @@ export default function ClientMap({
                 </span>
               </div>
             </div>
+            <PriceGuideSparkline
+              fuelType={fuelType}
+              nationalPriceBenchmark={initialNationalPriceBenchmark}
+            />
           </div>
         </div>
       )}
