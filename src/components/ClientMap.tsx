@@ -21,7 +21,7 @@ import {
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, Info, List, LocateFixed, Search, X } from 'lucide-react';
-import { Line, LineChart, ResponsiveContainer } from 'recharts';
+import { Area, AreaChart, Line, ResponsiveContainer, YAxis } from 'recharts';
 
 import {
   searchLocation,
@@ -190,6 +190,30 @@ function formatPriceGuideDate(date: string) {
   return priceGuideDateFormatter.format(new Date(`${date}T00:00:00.000Z`));
 }
 
+function renderLatestSparklineDot(
+  latestPointDate: string,
+  fuelType: 'unleaded' | 'diesel',
+  props: {
+    cx?: number;
+    cy?: number;
+    payload?: { date?: string };
+  },
+) {
+  const { cx, cy, payload } = props;
+
+  if (typeof cx !== 'number' || typeof cy !== 'number' || payload?.date !== latestPointDate) {
+    return null;
+  }
+
+  return (
+    <g>
+      <circle cx={cx} cy={cy} r={5} fill="#dbeafe" />
+      <circle cx={cx} cy={cy} r={3.25} fill={fuelType === 'diesel' ? '#1d4ed8' : '#2563eb'} />
+      <circle cx={cx} cy={cy} r={1.75} fill="#ffffff" />
+    </g>
+  );
+}
+
 function PriceGuideSparkline({
   fuelType,
   nationalPriceBenchmark,
@@ -200,57 +224,91 @@ function PriceGuideSparkline({
   const history = nationalPriceBenchmark?.fuelHistory[fuelType] ?? [];
   const latestPoint = history.at(-1) ?? null;
   const firstPoint = history[0] ?? null;
+  const historyPrices = history.map((point) => point.averagePrice);
+  const historyMinPrice = historyPrices.length > 0 ? Math.min(...historyPrices) : null;
+  const historyMaxPrice = historyPrices.length > 0 ? Math.max(...historyPrices) : null;
+  const historySpread =
+    historyMinPrice !== null && historyMaxPrice !== null
+      ? Math.max(historyMaxPrice - historyMinPrice, 0.6)
+      : null;
+  const domainPadding = historySpread !== null ? Math.max(historySpread * 0.2, 0.15) : null;
+  const yDomain =
+    historyMinPrice !== null && historyMaxPrice !== null && domainPadding !== null
+      ? [historyMinPrice - domainPadding, historyMaxPrice + domainPadding]
+      : ['auto', 'auto'];
   const trendDelta =
     latestPoint && firstPoint ? latestPoint.averagePrice - firstPoint.averagePrice : null;
   const trendText =
     trendDelta === null
       ? null
       : Math.abs(trendDelta) < 0.05
-        ? 'Flat vs 30 days ago'
-        : `${trendDelta > 0 ? '+' : '-'}${Math.abs(trendDelta).toFixed(1)}p vs 30 days ago`;
-  const trendClassName =
+        ? 'Flat over 30 days'
+        : `${trendDelta > 0 ? 'Up' : 'Down'} ${Math.abs(trendDelta).toFixed(1)}p`;
+  const trendBadgeClassName =
     trendDelta === null || Math.abs(trendDelta) < 0.05
-      ? 'text-gray-500'
+      ? 'border-gray-200 bg-gray-50 text-gray-600'
       : trendDelta > 0
-        ? 'text-rose-600'
-        : 'text-emerald-600';
+        ? 'border-rose-200 bg-rose-50 text-rose-700'
+        : 'border-emerald-200 bg-emerald-50 text-emerald-700';
+  const lineStroke = fuelType === 'diesel' ? '#1d4ed8' : '#2563eb';
 
   return (
     <div className="mt-3 border-t border-gray-100 pt-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
-            UK {fuelType} trend
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-gray-500">
+            UK {fuelType}
           </p>
-          <p className="mt-1 text-lg font-semibold text-gray-900">
+          <p className="mt-1 text-xl font-semibold tracking-tight text-gray-900">
             {latestPoint ? `${latestPoint.averagePrice.toFixed(1)}p` : 'N/A'}
           </p>
+          <p className="mt-1 text-xs text-gray-500">30-day average</p>
         </div>
         {trendText ? (
-          <p className={`text-right text-xs font-medium ${trendClassName}`}>{trendText}</p>
+          <div
+            className={`inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold ${trendBadgeClassName}`}
+          >
+            {trendText}
+          </div>
         ) : null}
       </div>
 
       {history.length > 0 ? (
         <>
-          <div className="mt-2 h-16 w-full" aria-label={`30-day UK ${fuelType} average price trend`}>
+          <div className="mt-3 h-20 w-full" aria-label={`30-day UK ${fuelType} average price trend`}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={history} margin={{ top: 6, right: 2, bottom: 6, left: 2 }}>
+              <AreaChart data={history} margin={{ top: 8, right: 4, bottom: 8, left: 4 }}>
+                <defs>
+                  <linearGradient id={`price-guide-gradient-${fuelType}`} x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={lineStroke} stopOpacity={0.22} />
+                    <stop offset="100%" stopColor={lineStroke} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <YAxis hide domain={yDomain} />
+                <Area
+                  type="monotone"
+                  dataKey="averagePrice"
+                  stroke="none"
+                  fill={`url(#price-guide-gradient-${fuelType})`}
+                  isAnimationActive={false}
+                />
                 <Line
                   type="monotone"
                   dataKey="averagePrice"
-                  stroke="#2563eb"
-                  strokeWidth={2.5}
-                  dot={false}
-                  activeDot={{ r: 4, stroke: '#2563eb', strokeWidth: 2, fill: '#ffffff' }}
+                  stroke={lineStroke}
+                  strokeWidth={2.75}
+                  dot={(props) =>
+                    latestPoint ? renderLatestSparklineDot(latestPoint.date, fuelType, props) : null
+                  }
+                  activeDot={false}
                   isAnimationActive={false}
                 />
-              </LineChart>
+              </AreaChart>
             </ResponsiveContainer>
           </div>
           <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-gray-500">
             <span>{formatPriceGuideDate(history[0].date)}</span>
-            <span className="truncate">30-day UK daily avg</span>
+            <span className="truncate font-medium">30-day UK daily avg</span>
             <span>{formatPriceGuideDate(history.at(-1)?.date ?? history[0].date)}</span>
           </div>
         </>
