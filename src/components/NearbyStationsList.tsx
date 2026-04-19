@@ -8,6 +8,14 @@ import { useMemo, useState, type Ref } from 'react';
 import type { PriceBenchmark, StationMapRecord } from '@/app/actions/stations';
 import { getPriceScale, getPriceTextClassName, getPriceTone } from '@/lib/price-colors';
 
+const FIXED_REFUEL_VOLUME_LITRES = 50;
+const gbpFormatter = new Intl.NumberFormat('en-GB', {
+  style: 'currency',
+  currency: 'GBP',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+
 type FocusLocation = {
   lat: number;
   lng: number;
@@ -30,6 +38,9 @@ interface NearbyStationsListProps {
 type NearbyStationListItem = {
   station: StationMapRecord;
   price: number | null;
+  refuelCostText: string | null;
+  averageComparisonText: string | null;
+  averageComparisonClassName: string | null;
   freshnessLabel: 'Fresh' | 'Still good' | 'Stale' | null;
   freshnessBadgeClassName: string | null;
   freshnessRelativeText: string | null;
@@ -96,6 +107,43 @@ function getDirectionsUrl(lat: number, lng: number) {
   return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
 }
 
+function formatRefuelCost(pricePence: number, litres: number) {
+  return `${litres}L: ${gbpFormatter.format((pricePence * litres) / 100)}`;
+}
+
+function getAverageComparison(
+  pricePence: number | null,
+  averagePricePence: number | null,
+  litres: number,
+) {
+  if (pricePence === null || averagePricePence === null) {
+    return null;
+  }
+
+  const differenceGbp = ((averagePricePence - pricePence) * litres) / 100;
+
+  if (Math.abs(differenceGbp) < 0.05) {
+    return {
+      className: 'text-gray-500',
+      text: 'In line with nearby avg',
+    };
+  }
+
+  const formattedDifference = gbpFormatter.format(Math.abs(differenceGbp));
+
+  if (differenceGbp > 0) {
+    return {
+      className: 'text-emerald-700',
+      text: `${formattedDifference} below nearby avg`,
+    };
+  }
+
+  return {
+    className: 'text-amber-700',
+    text: `${formattedDifference} above nearby avg`,
+  };
+}
+
 export default function NearbyStationsList({
   stations,
   fuelType,
@@ -137,6 +185,7 @@ export default function NearbyStationsList({
     }
 
     const normalizedFuelType = fuelType.toLowerCase();
+    const nearbyAveragePrice = priceBenchmark?.fuelSummaries[fuelType].averagePrice ?? null;
 
     return stations
       .map((station) => {
@@ -153,10 +202,19 @@ export default function NearbyStationsList({
             ? new Date(fallbackPrice.timestamp)
             : null;
         const freshnessTone = freshnessTimestamp ? getFreshnessTone(freshnessTimestamp) : null;
+        const averageComparison = getAverageComparison(
+          price,
+          nearbyAveragePrice,
+          FIXED_REFUEL_VOLUME_LITRES,
+        );
 
         return {
           station,
           price,
+          refuelCostText:
+            price !== null ? formatRefuelCost(price, FIXED_REFUEL_VOLUME_LITRES) : null,
+          averageComparisonText: averageComparison?.text ?? null,
+          averageComparisonClassName: averageComparison?.className ?? null,
           distanceMiles: getDistanceMiles(listOrigin, station),
           freshnessLabel: freshnessTone?.label ?? null,
           freshnessBadgeClassName: freshnessTone?.badgeClassName ?? null,
@@ -220,7 +278,7 @@ export default function NearbyStationsList({
         return left.station.id.localeCompare(right.station.id);
       })
       .slice(0, 10);
-  }, [fuelType, listOrigin, sortMode, stations]);
+  }, [fuelType, listOrigin, priceBenchmark, sortMode, stations]);
 
   if (!listOrigin) {
     return null;
@@ -340,6 +398,18 @@ export default function NearbyStationsList({
                           {item.price !== null ? `${item.price.toFixed(1)}p` : 'N/A'}
                         </div>
                         <div className="text-xs text-gray-500">{fuelType}</div>
+                        {item.refuelCostText && (
+                          <div className="mt-1 text-xs font-medium text-gray-700">
+                            {item.refuelCostText}
+                          </div>
+                        )}
+                        {item.averageComparisonText && item.averageComparisonClassName && (
+                          <div
+                            className={`mt-1 text-[11px] font-medium ${item.averageComparisonClassName}`}
+                          >
+                            {item.averageComparisonText}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </button>
