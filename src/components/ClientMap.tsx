@@ -1679,7 +1679,7 @@ export default function ClientMap({
           <button
             type="button"
             onClick={handleToggleBestNearby}
-            className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
+            className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
               bestNearbyNeedsAttention
                 ? 'border-blue-200 bg-blue-50 text-blue-700'
                 : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
@@ -1696,7 +1696,7 @@ export default function ClientMap({
         <button
           type="button"
           onClick={() => setIsMobilePriceGuideVisible((prev) => !prev)}
-          className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
+          className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
             isMobilePriceGuideVisible
               ? 'border-blue-200 bg-blue-50 text-blue-700'
               : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
@@ -1712,7 +1712,7 @@ export default function ClientMap({
           type="button"
           onClick={() => setIsNearbyListOpen((prev) => !prev)}
           disabled={!viewportCenter}
-          className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+          className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
             isNearbyListOpen
               ? 'border-blue-200 bg-blue-50 text-blue-700'
               : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
@@ -1734,7 +1734,7 @@ export default function ClientMap({
           type="button"
           onClick={handleLocateUser}
           disabled={isLocating}
-          className={`pointer-events-auto flex shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
             isFocusedOnUserLocation || isLocating
               ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
               : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'

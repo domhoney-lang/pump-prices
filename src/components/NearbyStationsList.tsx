@@ -353,7 +353,7 @@ export default function NearbyStationsList({
             </div>
           )}
 
-          <div className="mt-4 max-h-[24dvh] space-y-2 overflow-y-auto pr-1 sm:max-h-[45dvh]">
+          <div className="mt-4 max-h-[24dvh] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:max-h-[45dvh]">
             {nearbyStations.map((item) => {
               const priceTextClassName = getPriceTextClassName(getPriceTone(item.price, priceScale));
 
