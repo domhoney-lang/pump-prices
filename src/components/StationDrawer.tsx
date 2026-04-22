@@ -165,7 +165,7 @@ export default function StationDrawer({
   nationalPriceBenchmark,
   focusLocation,
 }: StationDrawerProps) {
-  const [activeSnapPoint, setActiveSnapPoint] = useState<string | number | null>(0.55);
+  const [activeSnapPoint, setActiveSnapPoint] = useState<string | number | null>(0.85);
 
   if (!station) return null;
 
@@ -248,15 +248,20 @@ export default function StationDrawer({
   return (
     <Drawer.Root
       open={isOpen}
-      onOpenChange={(open) => !open && onClose()}
+      onOpenChange={(open) => {
+        if (!open) {
+          setActiveSnapPoint(0.85);
+          onClose();
+        }
+      }}
       snapPoints={[0.55, 0.85]}
       activeSnapPoint={activeSnapPoint}
       setActiveSnapPoint={setActiveSnapPoint}
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-black/40 z-40" />
-        <Drawer.Content className="bg-white flex flex-col rounded-t-[10px] max-h-[85dvh] fixed bottom-0 left-0 right-0 z-50 shadow-xl">
-          <div className="p-6 bg-white rounded-t-[10px] flex-1 overflow-y-auto">
+        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden rounded-t-[10px] bg-white shadow-xl">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-t-[10px] bg-white p-6 pb-10">
             <Drawer.Title className="sr-only">
               {station.brand || 'Unknown Brand'} station details
             </Drawer.Title>

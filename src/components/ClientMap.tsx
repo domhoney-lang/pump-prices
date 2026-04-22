@@ -384,6 +384,9 @@ export default function ClientMap({
   );
   const [stationSelectionMode, setStationSelectionMode] = useState(initialSelectionMode);
   const [priceBenchmark, setPriceBenchmark] = useState<PriceBenchmark | null>(initialPriceBenchmark);
+  const [nationalPriceBenchmark, setNationalPriceBenchmark] = useState<NationalPriceBenchmark | null>(
+    initialNationalPriceBenchmark,
+  );
   const [bestNearby, setBestNearby] = useState<BestNearby | null>(initialBestNearby);
   const [bestNearbyIsObscured, setBestNearbyIsObscured] = useState(false);
   const [mapObstructionRects, setMapObstructionRects] = useState<OverlayRect[]>([]);
@@ -444,7 +447,7 @@ export default function ClientMap({
       ? 'the selected location'
       : 'the map center';
   const nearbyFuelSummary = priceBenchmark?.fuelSummaries[fuelType] ?? null;
-  const nationalFuelSummary = initialNationalPriceBenchmark?.fuelSummaries[fuelType] ?? null;
+  const nationalFuelSummary = nationalPriceBenchmark?.fuelSummaries[fuelType] ?? null;
   const stationSummary = useMemo<ReactNode>(() => {
     if (!hasAnyStationData) {
       return 'Station data will appear after the next scheduled sync';
@@ -894,11 +897,13 @@ export default function ClientMap({
     setIsStationResultsCapped(initialIsCapped && initialMatchingStationCount !== totalStationCount);
     setStationSelectionMode(initialSelectionMode);
     setPriceBenchmark(initialPriceBenchmark);
+    setNationalPriceBenchmark(initialNationalPriceBenchmark);
     setBestNearby(initialBestNearby);
   }, [
     initialIsCapped,
     initialBestNearby,
     initialMatchingStationCount,
+    initialNationalPriceBenchmark,
     initialPriceBenchmark,
     initialSelectionMode,
     initialStations,
@@ -1194,7 +1199,9 @@ export default function ClientMap({
       setLoadingStations(true);
       setStationLoadError(null);
 
-      void getStationsInBounds(bounds)
+      void getStationsInBounds(bounds, {
+        includeNationalBenchmark: true,
+      })
         .then((result) => {
           if (requestId !== viewportRequestIdRef.current) {
             return;
@@ -1210,6 +1217,9 @@ export default function ClientMap({
           }
           if (result.bestNearby) {
             setBestNearby(result.bestNearby);
+          }
+          if (result.nationalPriceBenchmark !== undefined) {
+            setNationalPriceBenchmark(result.nationalPriceBenchmark);
           }
         })
         .catch((error) => {
@@ -1261,6 +1271,7 @@ export default function ClientMap({
     try {
       const result = await getStationsInBounds(bounds, {
         includeNearbyBenchmark: true,
+        includeNationalBenchmark: true,
       });
       if (requestId !== viewportRequestIdRef.current) {
         return;
@@ -1276,6 +1287,9 @@ export default function ClientMap({
       }
       if (result.bestNearby) {
         setBestNearby(result.bestNearby);
+      }
+      if (result.nationalPriceBenchmark !== undefined) {
+        setNationalPriceBenchmark(result.nationalPriceBenchmark);
       }
     } catch (error) {
       if (requestId !== viewportRequestIdRef.current) {
@@ -1641,7 +1655,7 @@ export default function ClientMap({
             </div>
             <PriceGuideSparkline
               fuelType={fuelType}
-              nationalPriceBenchmark={initialNationalPriceBenchmark}
+              nationalPriceBenchmark={nationalPriceBenchmark}
             />
           </div>
         </div>
@@ -1843,7 +1857,7 @@ export default function ClientMap({
             </div>
             <PriceGuideSparkline
               fuelType={fuelType}
-              nationalPriceBenchmark={initialNationalPriceBenchmark}
+              nationalPriceBenchmark={nationalPriceBenchmark}
             />
           </div>
         </div>
@@ -1894,7 +1908,7 @@ export default function ClientMap({
         }}
         fuelType={fuelType}
         priceBenchmark={priceBenchmark}
-        nationalPriceBenchmark={initialNationalPriceBenchmark}
+        nationalPriceBenchmark={nationalPriceBenchmark}
         focusLocation={distanceReferenceLocation}
       />
     </div>

@@ -155,6 +155,7 @@ export type StationBoundsInput = {
 
 type StationQueryOptions = {
   includeNearbyBenchmark?: boolean;
+  includeNationalBenchmark?: boolean;
 };
 
 function buildBoundsWhere(bounds?: StationBoundsInput): Prisma.StationWhereInput | undefined {
@@ -797,10 +798,12 @@ async function loadStations(bounds?: StationBoundsInput, options?: StationQueryO
   const stations = stationIds
     .map((stationId) => stationsById.get(stationId))
     .filter((station): station is StationMapRecord => station !== undefined);
-  const nearbyBenchmarkData =
+  const [nearbyBenchmarkData, nationalPriceBenchmark] = await Promise.all([
     bounds && options?.includeNearbyBenchmark !== false
-      ? await buildNearbyBenchmark(bounds)
-      : null;
+      ? buildNearbyBenchmark(bounds)
+      : Promise.resolve(null),
+    options?.includeNationalBenchmark ? getCachedNationalBenchmark() : Promise.resolve(undefined),
+  ]);
 
   return {
     stations,
@@ -812,6 +815,7 @@ async function loadStations(bounds?: StationBoundsInput, options?: StationQueryO
     selectionMode,
     priceBenchmark: nearbyBenchmarkData?.priceBenchmark,
     bestNearby: nearbyBenchmarkData?.bestNearby,
+    ...(nationalPriceBenchmark !== undefined ? { nationalPriceBenchmark } : {}),
   } satisfies StationsPageData;
 }
 
