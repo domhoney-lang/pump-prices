@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import { Drawer } from 'vaul';
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { format, formatDistanceToNow, subDays } from 'date-fns';
@@ -165,8 +164,6 @@ export default function StationDrawer({
   nationalPriceBenchmark,
   focusLocation,
 }: StationDrawerProps) {
-  const [activeSnapPoint, setActiveSnapPoint] = useState<string | number | null>(0.85);
-
   if (!station) return null;
 
   const latestCurrentPrice = station.currentPrices.find(
@@ -250,18 +247,14 @@ export default function StationDrawer({
       open={isOpen}
       onOpenChange={(open) => {
         if (!open) {
-          setActiveSnapPoint(0.85);
           onClose();
         }
       }}
-      snapPoints={[0.55, 0.85]}
-      activeSnapPoint={activeSnapPoint}
-      setActiveSnapPoint={setActiveSnapPoint}
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-black/40 z-40" />
-        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 flex h-[85dvh] max-h-[85dvh] flex-col overflow-hidden rounded-t-[10px] bg-white shadow-xl">
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-t-[10px] bg-white p-6 pb-10">
+        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 flex max-h-[85dvh] flex-col overflow-hidden rounded-t-[10px] bg-white shadow-xl">
+          <div className="min-h-0 flex-1 overflow-y-auto rounded-t-[10px] bg-white p-6 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
             <Drawer.Title className="sr-only">
               {station.brand || 'Unknown Brand'} station details
             </Drawer.Title>
