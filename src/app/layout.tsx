@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Analytics } from "@vercel/analytics/next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -27,7 +28,10 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
     >
-      <body className="h-dvh w-screen overflow-hidden m-0">{children}</body>
+      <body className="h-dvh w-screen overflow-hidden m-0">
+        {children}
+        <Analytics />
+      </body>
     </html>
   );
 }
