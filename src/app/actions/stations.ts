@@ -158,6 +158,32 @@ type StationQueryOptions = {
   includeNationalBenchmark?: boolean;
 };
 
+const globalForStationActions = globalThis as unknown as {
+  localPrismaDevQueue: Promise<void> | undefined;
+};
+
+function isLocalPrismaDevDatabase() {
+  const databaseUrl = process.env.DATABASE_URL ?? '';
+  return databaseUrl.startsWith('prisma+postgres://localhost:');
+}
+
+async function withSerializedLocalPrisma<T>(operation: () => Promise<T>) {
+  if (!isLocalPrismaDevDatabase()) {
+    return operation();
+  }
+
+  const queuedOperation = (globalForStationActions.localPrismaDevQueue ?? Promise.resolve())
+    .catch(() => undefined)
+    .then(operation);
+
+  globalForStationActions.localPrismaDevQueue = queuedOperation.then(
+    () => undefined,
+    () => undefined,
+  );
+
+  return queuedOperation;
+}
+
 function buildBoundsWhere(bounds?: StationBoundsInput): Prisma.StationWhereInput | undefined {
   const validCoordinateWhere: Prisma.StationWhereInput = {
     lat: {
@@ -553,12 +579,13 @@ async function buildNationalBenchmarkHistory(): Promise<
 }
 
 async function buildNationalBenchmark(): Promise<NationalPriceBenchmark> {
-  const [stationRows, fuelHistory] = await Promise.all([
-    prisma.station.findMany({
-      select: stationMapSelect,
-    }),
-    buildNationalBenchmarkHistory(),
-  ]);
+  const stationRowsPromise = prisma.station.findMany({
+    select: stationMapSelect,
+  });
+  const fuelHistoryPromise = buildNationalBenchmarkHistory();
+  const [stationRows, fuelHistory] = isLocalPrismaDevDatabase()
+    ? [await stationRowsPromise, await fuelHistoryPromise]
+    : await Promise.all([stationRowsPromise, fuelHistoryPromise]);
   const stations = stationRows
     .map(toStationMapRecord)
     .filter((station): station is StationMapRecord => station !== null);
@@ -716,10 +743,11 @@ async function buildNearbyBenchmark(bounds: StationBoundsInput) {
 
 async function loadStations(bounds?: StationBoundsInput, options?: StationQueryOptions) {
   const where = buildBoundsWhere(bounds);
-  const [totalStationCount, matchingStationCount] = await prisma.$transaction([
-    prisma.station.count(),
-    prisma.station.count({ where }),
-  ]);
+  const totalStationCountPromise = prisma.station.count();
+  const matchingStationCountPromise = prisma.station.count({ where });
+  const [totalStationCount, matchingStationCount] = isLocalPrismaDevDatabase()
+    ? [await totalStationCountPromise, await matchingStationCountPromise]
+    : await prisma.$transaction([totalStationCountPromise, matchingStationCountPromise]);
 
   const stationCandidates = await prisma.station.findMany({
     where,
@@ -798,12 +826,16 @@ async function loadStations(bounds?: StationBoundsInput, options?: StationQueryO
   const stations = stationIds
     .map((stationId) => stationsById.get(stationId))
     .filter((station): station is StationMapRecord => station !== undefined);
-  const [nearbyBenchmarkData, nationalPriceBenchmark] = await Promise.all([
+  const nearbyBenchmarkPromise =
     bounds && options?.includeNearbyBenchmark !== false
       ? buildNearbyBenchmark(bounds)
-      : Promise.resolve(null),
-    options?.includeNationalBenchmark ? getCachedNationalBenchmark() : Promise.resolve(undefined),
-  ]);
+      : Promise.resolve(null);
+  const nationalPriceBenchmarkPromise = options?.includeNationalBenchmark
+    ? getCachedNationalBenchmark()
+    : Promise.resolve(undefined);
+  const [nearbyBenchmarkData, nationalPriceBenchmark] = isLocalPrismaDevDatabase()
+    ? [await nearbyBenchmarkPromise, await nationalPriceBenchmarkPromise]
+    : await Promise.all([nearbyBenchmarkPromise, nationalPriceBenchmarkPromise]);
 
   return {
     stations,
@@ -820,30 +852,35 @@ async function loadStations(bounds?: StationBoundsInput, options?: StationQueryO
 }
 
 export async function getStations() {
-  const [stationData, nationalPriceBenchmark] = await Promise.all([
-    loadStations(),
-    getCachedNationalBenchmark(),
-  ]);
+  return withSerializedLocalPrisma(async () => {
+    const stationDataPromise = loadStations();
+    const nationalPriceBenchmarkPromise = getCachedNationalBenchmark();
+    const [stationData, nationalPriceBenchmark] = isLocalPrismaDevDatabase()
+      ? [await stationDataPromise, await nationalPriceBenchmarkPromise]
+      : await Promise.all([stationDataPromise, nationalPriceBenchmarkPromise]);
 
-  return {
-    ...stationData,
-    nationalPriceBenchmark,
-  } satisfies StationsPageData;
+    return {
+      ...stationData,
+      nationalPriceBenchmark,
+    } satisfies StationsPageData;
+  });
 }
 
 export async function getStationsInBounds(bounds: StationBoundsInput, options?: StationQueryOptions) {
-  return loadStations(bounds, options);
+  return withSerializedLocalPrisma(() => loadStations(bounds, options));
 }
 
 export async function getStationDetails(id: string): Promise<StationDetailRecord | null> {
-  const station = await prisma.station.findUnique({
-    where: { id },
-    include: stationDetailInclude,
+  return withSerializedLocalPrisma(async () => {
+    const station = await prisma.station.findUnique({
+      where: { id },
+      include: stationDetailInclude,
+    });
+
+    if (!station) {
+      return null;
+    }
+
+    return toStationDetailRecord(station);
   });
-
-  if (!station) {
-    return null;
-  }
-
-  return toStationDetailRecord(station);
 }

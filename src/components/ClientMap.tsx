@@ -264,7 +264,6 @@ function PriceGuideSparkline({
           <p className="mt-1 text-xl font-semibold tracking-tight text-gray-900">
             {latestPoint ? `${latestPoint.averagePrice.toFixed(1)}p` : 'N/A'}
           </p>
-          <p className="mt-1 text-xs text-gray-500">30-day average</p>
         </div>
         {trendText ? (
           <div
@@ -277,7 +276,7 @@ function PriceGuideSparkline({
 
       {history.length > 0 ? (
         <>
-          <div className="mt-3 h-20 w-full" aria-label={`30-day UK ${fuelType} average price trend`}>
+          <div className="mt-2 h-24 w-full" aria-label={`30-day UK ${fuelType} average price trend`}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={history} margin={{ top: 8, right: 4, bottom: 8, left: 4 }}>
                 <defs>
@@ -424,8 +423,6 @@ export default function ClientMap({
   const activeBestNearby = bestNearby?.[fuelType] ?? null;
   const bestNearbyNeedsAttention =
     activeBestNearby !== null && (!activeBestNearby.inViewport || bestNearbyIsObscured);
-  const showOffscreenBestNearbyAlert =
-    bestNearbyNeedsAttention && !loadingStations;
   const bestNearbyHiddenByChrome =
     activeBestNearby !== null && activeBestNearby.inViewport && bestNearbyIsObscured;
   const bestNearbyDirection =
@@ -563,13 +560,13 @@ export default function ClientMap({
   }, [hasAnyStationData, loadingStations, mapFocusLocation, matchingStationCount]);
 
   const showMobilePriceGuide = hasStations && isMobilePriceGuideVisible;
-  const showMobileBestNearbyButton = activeBestNearby !== null && bestNearbyNeedsAttention;
-  const showMobileBestNearbyCard = showMobileBestNearbyButton && isCurrentBestNearbyOpen;
+  const showMobileBestNearbyButton = activeBestNearby !== null;
+  const showMobileBestNearbyCard = activeBestNearby !== null && isCurrentBestNearbyOpen;
   const showMobilePriceGuideCard = showMobilePriceGuide && !isNearbyListOpen;
   const showMobileBestNearbyNotice = showMobileBestNearbyCard && !isNearbyListOpen;
   const showMobileBottomControls = !isNearbyListOpen;
-  const showDesktopBestNearbyButton = showOffscreenBestNearbyAlert;
-  const showDesktopBestNearbyCard = showDesktopBestNearbyButton && isCurrentBestNearbyOpen;
+  const showDesktopBestNearbyButton = activeBestNearby !== null && !loadingStations;
+  const showDesktopBestNearbyCard = activeBestNearby !== null && isCurrentBestNearbyOpen;
   const mobilePriceGuideBottomPx =
     MOBILE_BOTTOM_CONTROLS_BOTTOM_PX +
     mobileOverlayHeights.bottomControls +
@@ -831,10 +828,12 @@ export default function ClientMap({
     return () => {
       if (loadingIndicatorShowTimeoutRef.current !== null) {
         window.clearTimeout(loadingIndicatorShowTimeoutRef.current);
+        loadingIndicatorShowTimeoutRef.current = null;
       }
 
       if (loadingIndicatorHideTimeoutRef.current !== null) {
         window.clearTimeout(loadingIndicatorHideTimeoutRef.current);
+        loadingIndicatorHideTimeoutRef.current = null;
       }
     };
   }, []);
@@ -877,7 +876,7 @@ export default function ClientMap({
   }, [activeBestNearby]);
 
   useEffect(() => {
-    if (!currentBestNearbyKey || !bestNearbyNeedsAttention) {
+    if (!currentBestNearbyKey) {
       setOpenBestNearbyKey(null);
       return;
     }
@@ -885,7 +884,7 @@ export default function ClientMap({
     if (openBestNearbyKey !== null && openBestNearbyKey !== currentBestNearbyKey) {
       setOpenBestNearbyKey(null);
     }
-  }, [bestNearbyNeedsAttention, currentBestNearbyKey, openBestNearbyKey]);
+  }, [currentBestNearbyKey, openBestNearbyKey]);
 
   useEffect(() => {
     setStations(initialStations);
@@ -1107,7 +1106,7 @@ export default function ClientMap({
 
     const permissions = navigator.permissions as Permissions;
 
-    permissions
+    void permissions
       .query({ name: 'geolocation' as PermissionName })
       .then((status) => {
         if (isActive && status.state === 'granted') {
@@ -1141,6 +1140,7 @@ export default function ClientMap({
     return () => {
       if (blurHideSuggestionsTimeoutRef.current !== null) {
         window.clearTimeout(blurHideSuggestionsTimeoutRef.current);
+        blurHideSuggestionsTimeoutRef.current = null;
       }
     };
   }, []);
@@ -1368,7 +1368,9 @@ export default function ClientMap({
       {activeBestNearby.distanceMiles < 10
         ? `${activeBestNearby.distanceMiles.toFixed(1)} mi away`
         : `${Math.round(activeBestNearby.distanceMiles)} mi away`}
-      {bestNearbyHiddenByChrome ? (
+      {activeBestNearby.inViewport && !bestNearbyIsObscured ? (
+        ', and it is already visible in this map view.'
+      ) : bestNearbyHiddenByChrome ? (
         ', but it is tucked behind the map controls.'
       ) : bestNearbyDirection ? (
         <>
@@ -1497,6 +1499,7 @@ export default function ClientMap({
                           onBlur={() => {
                             blurHideSuggestionsTimeoutRef.current = window.setTimeout(() => {
                               setShowLocationSuggestions(false);
+                              blurHideSuggestionsTimeoutRef.current = null;
                             }, 120);
                           }}
                           placeholder="Search location"
@@ -1615,18 +1618,22 @@ export default function ClientMap({
             ref={mobileNearbySheetRef}
             className="fixed inset-x-0 bottom-0 z-40 flex h-[60dvh] max-h-[78dvh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl outline-none sm:hidden"
           >
-            <div className="border-b border-gray-100 px-5 pb-2.5 pt-2.5">
-              <div className="relative flex items-center justify-center">
+            <Drawer.Title className="sr-only">Nearby stations</Drawer.Title>
+            <Drawer.Description className="sr-only">
+              Browse nearby stations and sort them by cheapest or nearest.
+            </Drawer.Description>
+            <div className="relative border-b border-gray-100 px-5 pb-2.5 pt-2.5">
+              <div className="flex items-center justify-center">
                 <div className="h-1.5 w-12 rounded-full bg-gray-200" />
-                <button
-                  type="button"
-                  onClick={() => setIsNearbyListOpen(false)}
-                  className="absolute right-0 inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
-                  aria-label="Close nearby stations"
-                >
-                  <X className="h-4 w-4" />
-                </button>
               </div>
+              <button
+                type="button"
+                onClick={() => setIsNearbyListOpen(false)}
+                className="absolute right-3 top-2.5 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+                aria-label="Close nearby stations"
+              >
+                <X className="h-4 w-4" />
+              </button>
             </div>
 
             <NearbyStationsList
@@ -1885,7 +1892,11 @@ export default function ClientMap({
                 <button
                   type="button"
                   onClick={handleToggleBestNearby}
-                  className="pointer-events-auto inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50/90 px-4 py-3 text-sm font-medium text-blue-700 shadow-lg backdrop-blur-md transition-colors hover:bg-blue-100"
+                  className={`pointer-events-auto inline-flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm font-medium shadow-lg backdrop-blur-md transition-colors ${
+                    bestNearbyNeedsAttention
+                      ? 'border-blue-200 bg-blue-50/90 text-blue-700 hover:bg-blue-100'
+                      : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+                  }`}
                   aria-expanded={showDesktopBestNearbyCard}
                   aria-label="Show best nearby"
                 >

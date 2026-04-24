@@ -5,17 +5,21 @@ Changelog:
 
 ## Local Development
 
-THIS APP DOES NOT RUN SAFELY ON LOCAL
+This app can be reviewed safely on your machine, but only if you keep both local env files pointed at a local Prisma dev database.
 
 ## Environment Safety
 
-Before running any Prisma or sync command locally, confirm `DATABASE_URL` and `DIRECT_URL` point at your local Prisma dev database.
+Before running any Prisma or sync command locally, confirm both `.env` and `.env.local` point at your local Prisma dev database.
+
+- Prisma CLI reads `.env`.
+- Next.js runtime reads `.env.local`.
+- `.env.example` is a useful template, but its database entries are hosted-shaped placeholders. Do not blindly copy those URLs into local review env files.
 
 Keep `npx prisma db push`, `npm run sync:fuel-data`, and `npm run sync:fuel-data -- --mode=full-price-backfill` pointed at a local database unless you are intentionally running them in a hosted environment.
 
 ### Quick Start
 
-Use this flow if you want to run the app entirely on your machine with a local Prisma dev database.
+Use this flow if you want to review the app locally without touching the hosted database.
 
 1. Install dependencies:
 
@@ -29,7 +33,7 @@ npm install
 cp .env.example .env.local
 ```
 
-If `.env.local` already exists, open it and verify both `DATABASE_URL` and `DIRECT_URL` still point to `localhost` before continuing.
+If `.env.local` already exists, open it and verify it does not contain a hosted production or staging database URL before continuing.
 
 3. Start a local Prisma dev database:
 
@@ -37,33 +41,42 @@ If `.env.local` already exists, open it and verify both `DATABASE_URL` and `DIRE
 npx prisma dev -d --name pump-prices-local
 ```
 
-That command prints a local Postgres connection string such as:
+4. Ask Prisma for the local connection URLs:
 
 ```bash
-postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable
+npx prisma dev ls
 ```
 
-4. Put that local connection string into `DATABASE_URL` and `DIRECT_URL` in `.env.local`.
+Copy these two values from the `pump-prices-local` entry:
 
-Example:
+- `DATABASE_URL`: the `prisma+postgres://localhost:...` URL for Prisma ORM and app runtime
+- `TCP`: the raw `postgresql://...` URL for direct Postgres access
+
+5. Put those local values into both `.env` and `.env.local`.
+
+Use this shape:
 
 ```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable&pgbouncer=true&statement_cache_size=0"
-DIRECT_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable"
-LOCATIONIQ_API_KEY=""
+# Prisma ORM / app runtime
+DATABASE_URL="prisma+postgres://localhost:51220/?api_key=..."
+
+# Direct Postgres access for Prisma schema commands
+DIRECT_URL="postgresql://postgres:postgres@localhost:51218/template1?sslmode=disable&connection_limit=10&connect_timeout=0&max_idle_connection_lifetime=0&pool_timeout=0&socket_timeout=0"
 ```
 
-Do not continue until both values point to `localhost` or `127.0.0.1`.
+Keep `.env` and `.env.local` aligned for local review.
 
-5. Push the Prisma schema into the local database:
+Do not continue until both files point only to `localhost` or `127.0.0.1`.
+
+6. If this is a brand-new local database, push the schema into it:
 
 ```bash
-env DATABASE_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable" \
-DIRECT_URL="postgresql://postgres:postgres@localhost:51218/postgres?sslmode=disable" \
 npx prisma db push
 ```
 
-6. Run a one-time full local data backfill so the map has prices:
+If Prisma complains about prepared statements on a fresh local Prisma dev server, temporarily set `.env`'s `DATABASE_URL` to the raw `postgresql://...` TCP URL from `npx prisma dev ls`, run `npx prisma db push`, then switch `.env` back to the `prisma+postgres://...` URL before starting the app.
+
+7. If you want real data in the local map, run a one-time local backfill:
 
 ```bash
 npm run sync:fuel-data -- --mode=full-price-backfill
@@ -71,13 +84,15 @@ npm run sync:fuel-data -- --mode=full-price-backfill
 
 Only run this command against a local dev database unless you have explicitly chosen a hosted environment for the backfill.
 
-7. Start the Next.js app:
+8. Start the app.
+
+This repo currently runs more reliably locally with webpack than Turbopack:
 
 ```bash
-npm run dev
+npm run dev:local
 ```
 
-8. Open [http://localhost:3000](http://localhost:3000).
+9. Open [http://127.0.0.1:3002](http://127.0.0.1:3002).
 
 ### Day-To-Day Local Run Flow
 
@@ -92,10 +107,10 @@ npx prisma dev -d --name pump-prices-local
 2. Start the app:
 
 ```bash
-npm run dev
+npm run dev:local
 ```
 
-3. Open [http://localhost:3000](http://localhost:3000).
+3. Open [http://127.0.0.1:3002](http://127.0.0.1:3002).
 
 4. Pull fresh fuel prices when needed:
 
@@ -107,22 +122,65 @@ This command writes to whichever database `DATABASE_URL` targets. Re-check `.env
 
 If the map loads but many markers show `N/A`, your local database probably has station records without current prices yet. Run the full backfill again:
 
+```bash
+npm run sync:fuel-data -- --mode=full-price-backfill
+```
 
 ### Starting The App Locally
 
-If local setup has already been completed and `.env.local` points at your local Prisma database, starting the app is just:
+If local setup has already been completed and both `.env` and `.env.local` point at your local Prisma database, starting the app is just:
 
 ```bash
-npm run dev
+npx prisma dev -d --name pump-prices-local
+npm run dev:local
 ```
 
-Then visit [http://localhost:3000](http://localhost:3000).
+Then visit [http://127.0.0.1:3002](http://127.0.0.1:3002).
 
-If port `3000` is already in use, Next.js will either prompt for another port or you can choose one explicitly:
+If port `3002` is already in use, choose another port explicitly:
 
 ```bash
-npm run dev -- --port 3001
+npm run dev:local -- --port 3003
 ```
+
+### Local Review Rules
+
+- Keep `.env` and `.env.local` local-only. This repository ignores `.env*`; do not commit them.
+- Do not point local Prisma commands at the hosted database unless you have deliberately chosen to work against hosted infrastructure.
+- Do not use local review to trigger production syncs. The protected `/api/sync` route and hosted schedulers are the intended production paths.
+- If local startup fails under Turbopack, use the webpack command above.
+
+## Production Handoff Checklist
+
+Use this checklist before merging or deploying code intended for production.
+
+1. Verify the change locally first:
+
+```bash
+npm run lint
+npm run dev:local
+```
+
+2. If the change affects Prisma schema, sync, or pricing logic, test it against the local Prisma dev database before touching any hosted environment.
+
+3. Never commit `.env`, `.env.local`, or other secrets. Production configuration belongs in hosted secret stores, not in git.
+
+4. If the change introduces or renames environment variables, update the relevant production configuration:
+
+- Vercel project env vars for the Next.js app
+- GitHub Actions repository secrets for scheduled sync jobs
+- AWS / GitHub secrets and variables for the Lambda worker
+
+5. Before any production sync or repair command, confirm hosted `DATABASE_URL` and `DIRECT_URL` point at the intended production database, not your local Prisma dev instance.
+
+6. If the change affects scheduled syncs or cache revalidation, verify these production paths still have the secrets they need:
+
+- `/api/sync`
+- `/api/internal/revalidate-national-benchmark`
+- GitHub Actions scheduler
+- Lambda worker deployment
+
+7. Commit and push only application code, config, and docs. Hosted deployments should pick up secrets from Vercel, GitHub Actions, and AWS, not from files in this repo.
 
 ## Environment
 

@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "next dev --webpack --hostname 127.0.0.1 --port 3002",
     "build": "prisma generate && next build",
     "build:lambda": "prisma generate && node scripts/build-lambda.mjs",
     "postinstall": "prisma generate",

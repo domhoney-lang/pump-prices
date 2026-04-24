@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { ChevronRight } from 'lucide-react';
+import { ChevronRight, ListOrdered } from 'lucide-react';
 import { useMemo, useState, type Ref } from 'react';
 
 import type { PriceBenchmark, StationMapRecord } from '@/app/actions/stations';
@@ -338,23 +338,25 @@ export default function NearbyStationsList({
             : 'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'
         }
       >
-        <div className={isSheet ? 'flex items-center justify-between gap-3' : 'min-w-0'}>
+        <div className={isSheet ? 'flex min-w-0 flex-nowrap items-center justify-start gap-3' : 'min-w-0'}>
+          {isSheet && (
+            <div className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">
+              <ListOrdered className="h-3.5 w-3.5" />
+              <span>Top {visibleCount}</span>
+            </div>
+          )}
           <div className="min-w-0">
             <h2 className="text-base font-semibold tracking-tight text-gray-950">Nearby stations</h2>
             {!isSheet && <p className="mt-1 text-sm text-gray-500">{subtitleText}</p>}
           </div>
-          {isSheet && (
-            <div className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-              Top {visibleCount}
-            </div>
-          )}
         </div>
         <div
           className={`${isSheet ? 'mt-2 flex flex-wrap items-center gap-2' : 'flex flex-wrap items-center gap-2'}`}
         >
           {!isSheet && (
-            <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-              Top {visibleCount}
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-blue-100 bg-blue-50 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">
+              <ListOrdered className="h-3.5 w-3.5" />
+              <span>Top {visibleCount}</span>
             </div>
           )}
           <div className="inline-flex items-center rounded-full bg-gray-100 p-1 text-xs font-medium text-gray-600">
@@ -433,12 +435,12 @@ export default function NearbyStationsList({
                 >
                   <div className="flex items-start gap-3">
                     <div
-                      className={`flex w-[74px] shrink-0 flex-col rounded-[18px] border px-2.5 py-2.5 shadow-sm ${priceSurfaceClassName}`}
+                      className={`flex w-[74px] shrink-0 flex-col items-center justify-center rounded-[18px] border px-2.5 py-2.5 text-center shadow-sm ${priceSurfaceClassName}`}
                     >
-                      <span className={`text-[2rem] leading-none font-bold tracking-tight ${priceTextClassName}`}>
+                      <span className={`text-[1.1rem] leading-none font-bold tracking-tight ${priceTextClassName}`}>
                         {item.price !== null ? `${item.price.toFixed(1)}p` : 'N/A'}
                       </span>
-                      <span className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">
+                      <span className="mt-1.5 text-[8px] font-semibold uppercase tracking-[0.12em] text-gray-500">
                         {fuelType}
                       </span>
                     </div>
