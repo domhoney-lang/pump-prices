@@ -499,17 +499,36 @@ function getHistoryWindowStartFromEnd(windowEnd: Date) {
 }
 
 async function getNationalHistoryWindowRange() {
-  const latestHistory = await prisma.priceHistory.aggregate({
-    _max: {
-      timestamp: true,
-    },
-    where: {
-      fuelType: {
-        in: [...FUEL_TYPES],
+  const [latestCurrentPrice, latestHistory] = await Promise.all([
+    prisma.currentPrice.aggregate({
+      _max: {
+        timestamp: true,
       },
-    },
-  });
-  const windowEnd = latestHistory._max.timestamp ?? new Date();
+      where: {
+        fuelType: {
+          in: [...FUEL_TYPES],
+        },
+      },
+    }),
+    prisma.priceHistory.aggregate({
+      _max: {
+        timestamp: true,
+      },
+      where: {
+        fuelType: {
+          in: [...FUEL_TYPES],
+        },
+      },
+    }),
+  ]);
+  const currentPriceTimestamp = latestCurrentPrice._max.timestamp;
+  const historyTimestamp = latestHistory._max.timestamp;
+  const windowEnd =
+    currentPriceTimestamp && historyTimestamp
+      ? currentPriceTimestamp > historyTimestamp
+        ? currentPriceTimestamp
+        : historyTimestamp
+      : currentPriceTimestamp ?? historyTimestamp ?? new Date();
   const windowStart = getHistoryWindowStartFromEnd(windowEnd);
 
   return {
