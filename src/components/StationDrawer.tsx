@@ -411,7 +411,7 @@ export default function StationDrawer({
                   <ResponsiveContainer width="100%" height="100%">
                     <AreaChart
                       data={chartData}
-                      margin={{ top: 8, right: 8, left: -12, bottom: 0 }}
+                      margin={{ top: 8, right: 8, left: 4, bottom: 0 }}
                     >
                       <defs>
                         <linearGradient id="price-history-fill" x1="0" y1="0" x2="0" y2="1">
@@ -434,12 +434,13 @@ export default function StationDrawer({
                         tick={{ fill: '#6b7280' }}
                       />
                       <YAxis
-                        width={42}
+                        width={52}
                         domain={chartDomain}
                         tickCount={4}
                         fontSize={12}
                         tickLine={false}
                         axisLine={false}
+                        tickMargin={6}
                         tickFormatter={(value) => `${value.toFixed(1)}`}
                         tick={{ fill: '#6b7280' }}
                       />
