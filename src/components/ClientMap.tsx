@@ -72,6 +72,8 @@ type MapFocusTarget = UserLocation & {
   zoom?: number;
 };
 
+type StationDetailSource = 'map' | 'nearby-list';
+
 type ErrorBanner = {
   id: 'search' | 'geolocation' | 'station-load' | 'station-detail';
   title: string;
@@ -374,6 +376,7 @@ export default function ClientMap({
   const [hasLoadedMobilePriceGuidePreference, setHasLoadedMobilePriceGuidePreference] =
     useState(false);
   const [isNearbyListOpen, setIsNearbyListOpen] = useState(false);
+  const [stationDetailSource, setStationDetailSource] = useState<StationDetailSource | null>(null);
   const [searchError, setSearchError] = useState<string | null>(null);
   const [geolocationError, setGeolocationError] = useState<string | null>(null);
   const [stationLoadError, setStationLoadError] = useState<string | null>(null);
@@ -904,7 +907,8 @@ export default function ClientMap({
     totalStationCount,
   ]);
 
-  const handleStationSelect = useCallback(async (stationId: string) => {
+  const handleStationSelect = useCallback(async (stationId: string, source: StationDetailSource) => {
+    setStationDetailSource(source);
     setActiveStationId(stationId);
     setLoadingStation(true);
     setStationDetailError(null);
@@ -915,6 +919,10 @@ export default function ClientMap({
         setActiveStationId(null);
         setSelectedStation(null);
         setIsDrawerOpen(false);
+        setStationDetailSource(null);
+        if (source === 'nearby-list') {
+          setIsNearbyListOpen(true);
+        }
         setStationDetailError('Station details are unavailable right now.');
         return;
       }
@@ -924,11 +932,37 @@ export default function ClientMap({
     } catch (error) {
       console.error('Failed to load station details', error);
       setActiveStationId(null);
+      setStationDetailSource(null);
+      if (source === 'nearby-list') {
+        setIsNearbyListOpen(true);
+      }
       setStationDetailError('Could not load station details.');
     } finally {
       setLoadingStation(false);
     }
   }, []);
+
+  const handleMapStationSelect = useCallback(
+    (stationId: string) => {
+      void handleStationSelect(stationId, 'map');
+    },
+    [handleStationSelect],
+  );
+
+  const handleDesktopNearbyStationSelect = useCallback(
+    (stationId: string) => {
+      void handleStationSelect(stationId, 'nearby-list');
+    },
+    [handleStationSelect],
+  );
+
+  const handleMobileNearbyStationSelect = useCallback(
+    (stationId: string) => {
+      setIsNearbyListOpen(false);
+      void handleStationSelect(stationId, 'nearby-list');
+    },
+    [handleStationSelect],
+  );
 
   const requestUserLocation = useCallback((options?: { silent?: boolean; enableHighAccuracy?: boolean }) => {
     if (!navigator.geolocation) {
@@ -1554,7 +1588,7 @@ export default function ClientMap({
             : null
         }
         obstructionRects={mapObstructionRects}
-        onStationSelect={handleStationSelect}
+        onStationSelect={handleMapStationSelect}
         onViewportChange={handleViewportChange}
         onBestNearbyVisibilityChange={setBestNearbyIsObscured}
       />
@@ -1567,7 +1601,7 @@ export default function ClientMap({
         originLabel={nearbyListOriginLabel}
         loading={loadingStations}
         selectedStationId={activeStationId}
-        onStationSelect={handleStationSelect}
+        onStationSelect={handleDesktopNearbyStationSelect}
         containerRef={desktopNearbyListRef}
         className={`pointer-events-none absolute bottom-6 left-6 z-20 hidden w-full max-w-sm overflow-hidden transition-all duration-200 sm:block ${
           isNearbyListOpen ? 'sm:pointer-events-auto sm:opacity-100' : 'sm:translate-y-2 sm:opacity-0'
@@ -1581,13 +1615,13 @@ export default function ClientMap({
             ref={mobileNearbySheetRef}
             className="fixed inset-x-0 bottom-0 z-40 flex h-[60dvh] max-h-[78dvh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl outline-none sm:hidden"
           >
-            <div className="border-b border-gray-100 px-5 pb-3 pt-3">
+            <div className="border-b border-gray-100 px-5 pb-2.5 pt-2.5">
               <div className="relative flex items-center justify-center">
                 <div className="h-1.5 w-12 rounded-full bg-gray-200" />
                 <button
                   type="button"
                   onClick={() => setIsNearbyListOpen(false)}
-                  className="absolute right-0 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+                  className="absolute right-0 inline-flex h-8 w-8 items-center justify-center rounded-full text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
                   aria-label="Close nearby stations"
                 >
                   <X className="h-4 w-4" />
@@ -1603,10 +1637,7 @@ export default function ClientMap({
               originLabel={nearbyListOriginLabel}
               loading={loadingStations}
               selectedStationId={activeStationId}
-              onStationSelect={(stationId) => {
-                setIsNearbyListOpen(false);
-                void handleStationSelect(stationId);
-              }}
+              onStationSelect={handleMobileNearbyStationSelect}
               variant="sheet"
               className="min-h-0 flex-1"
             />
@@ -1935,10 +1966,18 @@ export default function ClientMap({
         stations={stations}
         isOpen={isDrawerOpen}
         onClose={() => {
+          const shouldRestoreNearbyList =
+            stationDetailSource === 'nearby-list' && viewportCenter !== null;
+
           setIsDrawerOpen(false);
           setActiveStationId(null);
           setSelectedStation(null);
           setStationDetailError(null);
+          setStationDetailSource(null);
+
+          if (shouldRestoreNearbyList) {
+            setIsNearbyListOpen(true);
+          }
         }}
         fuelType={fuelType}
         priceBenchmark={priceBenchmark}

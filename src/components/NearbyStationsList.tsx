@@ -333,17 +333,30 @@ export default function NearbyStationsList({
     >
       <div
         className={
-          isSheet ? 'border-b border-gray-100 px-5 pb-4 pt-1' : 'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'
+          isSheet
+            ? 'border-b border-gray-100 px-5 pb-3 pt-1'
+            : 'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'
         }
       >
-        <div className={isSheet ? '' : 'min-w-0'}>
-          <h2 className="text-base font-semibold tracking-tight text-gray-950">Nearby stations</h2>
-          <p className="mt-1 text-sm text-gray-500">{subtitleText}</p>
-        </div>
-        <div className={`${isSheet ? 'mt-3 flex flex-wrap items-center gap-2' : 'flex flex-wrap items-center gap-2'}`}>
-          <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
-            Top {visibleCount}
+        <div className={isSheet ? 'flex items-center justify-between gap-3' : 'min-w-0'}>
+          <div className="min-w-0">
+            <h2 className="text-base font-semibold tracking-tight text-gray-950">Nearby stations</h2>
+            {!isSheet && <p className="mt-1 text-sm text-gray-500">{subtitleText}</p>}
           </div>
+          {isSheet && (
+            <div className="inline-flex shrink-0 items-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+              Top {visibleCount}
+            </div>
+          )}
+        </div>
+        <div
+          className={`${isSheet ? 'mt-2 flex flex-wrap items-center gap-2' : 'flex flex-wrap items-center gap-2'}`}
+        >
+          {!isSheet && (
+            <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+              Top {visibleCount}
+            </div>
+          )}
           <div className="inline-flex items-center rounded-full bg-gray-100 p-1 text-xs font-medium text-gray-600">
             <button
               type="button"
@@ -418,14 +431,14 @@ export default function NearbyStationsList({
                         : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                   }`}
                 >
-                  <div className="flex items-start gap-4">
+                  <div className="flex items-start gap-3">
                     <div
-                      className={`flex w-20 shrink-0 flex-col rounded-2xl border px-3 py-3 shadow-sm ${priceSurfaceClassName}`}
+                      className={`flex w-[74px] shrink-0 flex-col rounded-[18px] border px-2.5 py-2.5 shadow-sm ${priceSurfaceClassName}`}
                     >
-                      <span className={`text-2xl font-bold tracking-tight ${priceTextClassName}`}>
+                      <span className={`text-[2rem] leading-none font-bold tracking-tight ${priceTextClassName}`}>
                         {item.price !== null ? `${item.price.toFixed(1)}p` : 'N/A'}
                       </span>
-                      <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                      <span className="mt-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-gray-500">
                         {fuelType}
                       </span>
                     </div>
@@ -469,7 +482,7 @@ export default function NearbyStationsList({
                         </div>
                       </div>
 
-                      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px]">
+                      <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px]">
                         {item.averageComparisonText && item.averageComparisonClassName ? (
                           <span className={`font-semibold ${item.averageComparisonClassName}`}>
                             {item.averageComparisonText}
