@@ -6,7 +6,16 @@ import { ChevronRight, ListOrdered } from 'lucide-react';
 import { useMemo, useState, type Ref } from 'react';
 
 import type { PriceBenchmark, StationMapRecord } from '@/app/actions/stations';
+import type { AlertBaselineSnapshot } from '@/lib/alert-baseline-store';
+import { getAlertBaselineKey } from '@/lib/alert-baseline-store';
+import {
+  buildStationAlertState,
+  getAlertSignalToneClassName,
+  type StationAlertSignal,
+} from '@/lib/alert-signals';
 import { hasBrandLogo } from '@/lib/brand-logos';
+import { getFreshnessTone } from '@/lib/freshness';
+import { NEARBY_BENCHMARK_RADIUS_MILES } from '@/lib/nearby-benchmark';
 import {
   getPriceScale,
   getPriceSurfaceClassName,
@@ -29,8 +38,11 @@ type FocusLocation = {
 };
 
 interface NearbyStationsListProps {
+  alertBaselines: AlertBaselineSnapshot;
+  bestStationId: string | null;
   stations: StationMapRecord[];
   fuelType: 'unleaded' | 'diesel';
+  nearbyRadiusMiles?: number;
   priceBenchmark: PriceBenchmark | null;
   listOrigin: FocusLocation | null;
   originLabel: string;
@@ -54,6 +66,7 @@ type NearbyStationListItem = {
   freshnessRelativeText: string | null;
   freshnessTitle: string | null;
   distanceMiles: number;
+  primaryAlert: StationAlertSignal | null;
 };
 
 type NearbySortMode = 'cheapest' | 'nearest';
@@ -76,29 +89,6 @@ function getDistanceMiles(origin: FocusLocation, station: Pick<StationMapRecord,
   return 2 * earthRadiusMiles * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
 }
 
-function getFreshnessTone(updatedAt: Date) {
-  const ageHours = (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60);
-
-  if (ageHours < 48) {
-    return {
-      badgeClassName: 'bg-emerald-100 text-emerald-700',
-      label: 'Fresh' as const,
-    };
-  }
-
-  if (ageHours < 144) {
-    return {
-      badgeClassName: 'bg-amber-100 text-amber-700',
-      label: 'Still good' as const,
-    };
-  }
-
-  return {
-    badgeClassName: 'bg-rose-100 text-rose-700',
-    label: 'Stale' as const,
-  };
-}
-
 function formatDistanceMiles(distanceMiles: number) {
   if (distanceMiles < 0.1) {
     return '<0.1 mi';
@@ -119,17 +109,19 @@ function getAverageComparison(
   pricePence: number | null,
   averagePricePence: number | null,
   litres: number,
+  radiusMiles: number,
 ) {
   if (pricePence === null || averagePricePence === null) {
     return null;
   }
 
   const differenceGbp = ((averagePricePence - pricePence) * litres) / 100;
+  const averageLabel = `${radiusMiles} mi avg`;
 
   if (Math.abs(differenceGbp) < 0.05) {
     return {
       className: 'text-gray-500',
-      text: 'In line with nearby avg',
+      text: `In line with ${averageLabel}`,
     };
   }
 
@@ -138,19 +130,22 @@ function getAverageComparison(
   if (differenceGbp > 0) {
     return {
       className: 'text-emerald-700',
-      text: `${formattedDifference} below nearby avg`,
+      text: `${formattedDifference} below ${averageLabel}`,
     };
   }
 
   return {
     className: 'text-amber-700',
-    text: `${formattedDifference} above nearby avg`,
+    text: `${formattedDifference} above ${averageLabel}`,
   };
 }
 
 export default function NearbyStationsList({
+  alertBaselines,
+  bestStationId,
   stations,
   fuelType,
+  nearbyRadiusMiles = NEARBY_BENCHMARK_RADIUS_MILES,
   priceBenchmark,
   listOrigin,
   originLabel,
@@ -211,7 +206,18 @@ export default function NearbyStationsList({
           price,
           nearbyAveragePrice,
           FIXED_REFUEL_VOLUME_LITRES,
+          nearbyRadiusMiles,
         );
+        const alertState = buildStationAlertState({
+          baseline: alertBaselines[getAlertBaselineKey(station.id, fuelType)] ?? null,
+          brand: station.brand,
+          currentPrices: station.currentPrices,
+          fuelType,
+          historicalPrices: station.fallbackPrices,
+          isBestWithinRadius: bestStationId === station.id,
+          radiusMiles: nearbyRadiusMiles,
+          stationId: station.id,
+        });
 
         return {
           station,
@@ -229,9 +235,10 @@ export default function NearbyStationsList({
           freshnessTitle: freshnessTimestamp
             ? `Price reported ${format(freshnessTimestamp, 'PPpp')}`
             : null,
+          primaryAlert: alertState.primarySignal,
         };
       })
-  }, [fuelType, listOrigin, priceBenchmark, stations]);
+  }, [alertBaselines, bestStationId, fuelType, listOrigin, nearbyRadiusMiles, priceBenchmark, stations]);
 
   const nearbyStations = useMemo(() => {
     return [...processedNearbyStations]
@@ -403,7 +410,7 @@ export default function NearbyStationsList({
           {noPricesForFuel && (
             <div className={`${isSheet ? 'mx-5 mt-5' : 'mt-4'} rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800`}>
               Nearby stations were found, but none currently have {fuelType} prices in the nearby
-              benchmark area.
+              {` ${nearbyRadiusMiles}-mile`} benchmark area.
             </div>
           )}
 
@@ -420,8 +427,12 @@ export default function NearbyStationsList({
               const priceSurfaceClassName = getPriceSurfaceClassName(priceTone);
               const stationHasLogo = hasBrandLogo(item.station.brand);
               const isSelected = selectedStationId === item.station.id;
-              const isBestValue = item.station.id === bestValueStationId;
-              const showStaleBadge = item.freshnessLabel === 'Stale';
+              const isBestWithinRadius = bestStationId !== null && item.station.id === bestStationId;
+              const isBestValueFallback =
+                bestStationId === null && item.station.id === bestValueStationId;
+              const showStaleBadge =
+                item.freshnessLabel === 'Stale' &&
+                item.primaryAlert?.kind !== 'freshnessTransition';
 
               return (
                 <button
@@ -431,7 +442,9 @@ export default function NearbyStationsList({
                   className={`group block w-full rounded-[22px] border p-4 text-left transition-all ${
                     isSelected
                       ? 'border-blue-200 bg-blue-50/80 shadow-sm'
-                      : isBestValue
+                      : isBestWithinRadius
+                        ? 'border-blue-200 bg-blue-50/70 shadow-sm'
+                        : isBestValueFallback
                         ? 'border-emerald-200 bg-emerald-50/70 shadow-sm'
                         : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                   }`}
@@ -462,7 +475,15 @@ export default function NearbyStationsList({
                             )}
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
-                            {isBestValue && (
+                            {item.primaryAlert && (
+                              <span
+                                className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getAlertSignalToneClassName(item.primaryAlert)}`}
+                                title={item.primaryAlert.detail}
+                              >
+                                {item.primaryAlert.shortLabel}
+                              </span>
+                            )}
+                            {!item.primaryAlert && isBestValueFallback && (
                               <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
                                 Best value
                               </span>
@@ -500,7 +521,9 @@ export default function NearbyStationsList({
                             {item.averageComparisonText}
                           </span>
                         ) : (
-                          <span className="text-gray-500">Price in line with nearby stations</span>
+                          <span className="text-gray-500">
+                            Price in line with {nearbyRadiusMiles} mi avg
+                          </span>
                         )}
                         {item.refuelCostText && (
                           <>

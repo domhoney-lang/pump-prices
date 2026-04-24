@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { unstable_cache } from 'next/cache';
 
 import { NATIONAL_PRICE_BENCHMARK_TAG } from '@/lib/cache-tags';
+import { NEARBY_BENCHMARK_RADIUS_MILES } from '@/lib/nearby-benchmark';
 import { getPriceScale } from '@/lib/price-colors';
 import { normalizeFuelPriceValue } from '@/lib/price-normalization';
 import { prisma } from '@/lib/prisma';
@@ -11,7 +12,6 @@ import { normalizeUkStationCoordinates } from '@/lib/station-coordinates';
 
 const MAP_STATION_LIMIT = 500;
 const MAP_FALLBACK_PRICE_WINDOW = 6;
-const NEARBY_BENCHMARK_RADIUS_MILES = 5;
 const NATIONAL_PRICE_HISTORY_WINDOW_DAYS = 30;
 const stationMapSelect = {
   id: true,
@@ -502,79 +502,192 @@ function getUtcDayKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
 
+function getUtcDayKeysInWindow(startDate: Date, dayCount: number) {
+  const dayKeys: string[] = [];
+  const cursor = new Date(startDate);
+
+  for (let index = 0; index < dayCount; index += 1) {
+    dayKeys.push(getUtcDayKey(cursor));
+    cursor.setUTCDate(cursor.getUTCDate() + 1);
+  }
+
+  return dayKeys;
+}
+
+type NormalizedBenchmarkHistoryRow = {
+  stationId: string;
+  fuelType: FuelType;
+  price: number;
+  timestamp: Date;
+};
+
+function normalizeBenchmarkHistoryRow(row: {
+  stationId: string;
+  fuelType: string;
+  price: number;
+  timestamp: Date;
+}): NormalizedBenchmarkHistoryRow | null {
+  const fuelType = row.fuelType.toLowerCase();
+
+  if (!isFuelType(fuelType)) {
+    return null;
+  }
+
+  const normalizedPrice = normalizeFuelPriceValue(row.price);
+
+  if (!normalizedPrice) {
+    return null;
+  }
+
+  return {
+    stationId: row.stationId,
+    fuelType,
+    price: normalizedPrice.normalizedPrice,
+    timestamp: row.timestamp,
+  };
+}
+
 async function buildNationalBenchmarkHistory(): Promise<
   Record<FuelType, FuelBenchmarkHistoryPoint[]>
 > {
-  const historyRows = await prisma.priceHistory.findMany({
-    where: {
-      fuelType: {
-        in: [...FUEL_TYPES],
+  const historyWindowStart = getNationalHistoryWindowStart();
+  const historyDayKeys = getUtcDayKeysInWindow(
+    historyWindowStart,
+    NATIONAL_PRICE_HISTORY_WINDOW_DAYS,
+  );
+  const [baselineRows, historyRows] = await Promise.all([
+    prisma.$queryRaw<
+      Array<{
+        stationId: string;
+        fuelType: string;
+        price: number;
+        timestamp: Date;
+      }>
+    >(Prisma.sql`
+      SELECT baseline."stationId", baseline."fuelType", baseline."price", baseline."timestamp"
+      FROM (
+        SELECT DISTINCT ON ("stationId", "fuelType")
+          "stationId",
+          "fuelType",
+          "price",
+          "timestamp"
+        FROM "PriceHistory"
+        WHERE LOWER("fuelType") IN (${Prisma.join(FUEL_TYPES)})
+          AND "timestamp" < ${historyWindowStart}
+        ORDER BY "stationId", "fuelType", "timestamp" DESC
+      ) AS baseline
+    `),
+    prisma.priceHistory.findMany({
+      where: {
+        fuelType: {
+          in: [...FUEL_TYPES],
+        },
+        timestamp: {
+          gte: historyWindowStart,
+        },
       },
-      timestamp: {
-        gte: getNationalHistoryWindowStart(),
+      select: {
+        stationId: true,
+        fuelType: true,
+        price: true,
+        timestamp: true,
       },
-    },
-    select: {
-      stationId: true,
-      fuelType: true,
-      price: true,
-      timestamp: true,
-    },
-    orderBy: [
-      {
-        timestamp: 'asc',
-      },
-      {
-        stationId: 'asc',
-      },
-    ],
-  });
+      orderBy: [
+        {
+          timestamp: 'asc',
+        },
+        {
+          stationId: 'asc',
+        },
+      ],
+    }),
+  ]);
   const historyByFuel = {
-    unleaded: new Map<string, Map<string, number>>(),
-    diesel: new Map<string, Map<string, number>>(),
-  } satisfies Record<FuelType, Map<string, Map<string, number>>>;
+    unleaded: {
+      baseline: new Map<string, number>(),
+      dailyUpdates: new Map<string, Array<{ stationId: string; price: number }>>(),
+    },
+    diesel: {
+      baseline: new Map<string, number>(),
+      dailyUpdates: new Map<string, Array<{ stationId: string; price: number }>>(),
+    },
+  } satisfies Record<
+    FuelType,
+    {
+      baseline: Map<string, number>;
+      dailyUpdates: Map<string, Array<{ stationId: string; price: number }>>;
+    }
+  >;
 
-  for (const row of historyRows) {
-    const fuelType = row.fuelType.toLowerCase();
+  for (const row of baselineRows) {
+    const normalizedRow = normalizeBenchmarkHistoryRow(row);
 
-    if (!isFuelType(fuelType)) {
+    if (!normalizedRow) {
       continue;
     }
 
-    const normalizedPrice = normalizeFuelPriceValue(row.price);
-
-    if (!normalizedPrice) {
-      continue;
-    }
-
-    const dayKey = getUtcDayKey(row.timestamp);
-    const stationPricesForDay = historyByFuel[fuelType].get(dayKey);
-
-    if (stationPricesForDay) {
-      stationPricesForDay.set(row.stationId, normalizedPrice.normalizedPrice);
-      continue;
-    }
-
-    historyByFuel[fuelType].set(dayKey, new Map([[row.stationId, normalizedPrice.normalizedPrice]]));
+    historyByFuel[normalizedRow.fuelType].baseline.set(
+      normalizedRow.stationId,
+      normalizedRow.price,
+    );
   }
 
-  const toHistorySeries = (historyForFuel: Map<string, Map<string, number>>) =>
-    Array.from(historyForFuel.entries())
-      .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
-      .map(([date, stationPrices]) => {
-        const prices = Array.from(stationPrices.values());
-        const totalPrice = prices.reduce((sum, price) => sum + price, 0);
+  for (const row of historyRows) {
+    const normalizedRow = normalizeBenchmarkHistoryRow(row);
 
-        return {
-          date,
-          averagePrice: totalPrice / prices.length,
-          stationCount: stationPrices.size,
-        } satisfies FuelBenchmarkHistoryPoint;
+    if (!normalizedRow) {
+      continue;
+    }
+
+    const dayKey = getUtcDayKey(normalizedRow.timestamp);
+    const dayUpdates = historyByFuel[normalizedRow.fuelType].dailyUpdates.get(dayKey);
+
+    if (dayUpdates) {
+      dayUpdates.push({
+        stationId: normalizedRow.stationId,
+        price: normalizedRow.price,
       });
+      continue;
+    }
+
+    historyByFuel[normalizedRow.fuelType].dailyUpdates.set(dayKey, [
+      {
+        stationId: normalizedRow.stationId,
+        price: normalizedRow.price,
+      },
+    ]);
+  }
+
+  const toHistorySeries = (fuelType: FuelType) => {
+    const activeStationPrices = new Map(historyByFuel[fuelType].baseline);
+
+    return historyDayKeys.flatMap((dayKey) => {
+      const dayUpdates = historyByFuel[fuelType].dailyUpdates.get(dayKey) ?? [];
+
+      for (const update of dayUpdates) {
+        activeStationPrices.set(update.stationId, update.price);
+      }
+
+      if (activeStationPrices.size === 0) {
+        return [];
+      }
+
+      const prices = Array.from(activeStationPrices.values());
+      const totalPrice = prices.reduce((sum, price) => sum + price, 0);
+
+      return [
+        {
+          date: dayKey,
+          averagePrice: totalPrice / prices.length,
+          stationCount: activeStationPrices.size,
+        } satisfies FuelBenchmarkHistoryPoint,
+      ];
+    });
+  };
 
   return {
-    unleaded: toHistorySeries(historyByFuel.unleaded),
-    diesel: toHistorySeries(historyByFuel.diesel),
+    unleaded: toHistorySeries('unleaded'),
+    diesel: toHistorySeries('diesel'),
   };
 }
 

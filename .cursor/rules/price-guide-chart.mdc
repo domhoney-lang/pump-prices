@@ -1,0 +1,27 @@
+---
+description: Preserve the agreed price-guide chart presentation in the map UI
+globs: src/components/{ClientMap,Map,NearbyStationsList,StationDrawer}.tsx
+alwaysApply: false
+---
+
+# Price Guide Chart
+
+When editing the map and price-guide UI, keep the price-guide chart card visually stable and readable.
+
+- The price-guide card in `ClientMap.tsx` should stay opaque: use a solid white background for the card itself.
+- Do not reintroduce translucent glass styling on the price-guide card. Avoid `bg-white/80`, `bg-white/90`, or `backdrop-blur-*` on that card container.
+- The chart should not show blurred map markers, map tiles, or other background colors through the card.
+- The UK average series must be a carried-forward daily market average: each day should reflect the latest known price for all stations as of that day, not just the subset of stations that changed on that day.
+- Keep the chart presentation clean and data-first: crisp line, subtle area fill, readable labels, and no decorative marker badges inside the chart card.
+
+Example:
+
+```tsx
+// Good: solid card for the price guide
+<div className="rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-lg">
+```
+
+```tsx
+// Bad: translucent card that lets the map bleed through the chart
+<div className="rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md">
+```

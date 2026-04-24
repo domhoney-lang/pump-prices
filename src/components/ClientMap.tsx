@@ -39,6 +39,17 @@ import {
   type StationDetailRecord,
   type StationMapRecord,
 } from '@/app/actions/stations';
+import type { AlertBaselineSnapshot } from '@/lib/alert-baseline-store';
+import { browserAlertBaselineStore, getAlertBaselineKey } from '@/lib/alert-baseline-store';
+import {
+  buildStationAlertState,
+  getAlertSignalToneClassName,
+} from '@/lib/alert-signals';
+import {
+  formatNearbyRadiusShortText,
+  formatNearbyRadiusText,
+  NEARBY_BENCHMARK_RADIUS_MILES,
+} from '@/lib/nearby-benchmark';
 import NearbyStationsList from './NearbyStationsList';
 import StationDrawer from './StationDrawer';
 
@@ -389,6 +400,8 @@ export default function ClientMap({
   const [nationalPriceBenchmark, setNationalPriceBenchmark] = useState<NationalPriceBenchmark | null>(
     initialNationalPriceBenchmark,
   );
+  const [alertBaselines, setAlertBaselines] = useState<AlertBaselineSnapshot>({});
+  const [hasLoadedAlertBaselines, setHasLoadedAlertBaselines] = useState(false);
   const [bestNearby, setBestNearby] = useState<BestNearby | null>(initialBestNearby);
   const [bestNearbyIsObscured, setBestNearbyIsObscured] = useState(false);
   const [mapObstructionRects, setMapObstructionRects] = useState<OverlayRect[]>([]);
@@ -447,6 +460,7 @@ export default function ClientMap({
     : mapFocusLocation
       ? 'the selected location'
       : 'the map center';
+  const nearbyRadiusMiles = priceBenchmark?.radiusMiles ?? NEARBY_BENCHMARK_RADIUS_MILES;
   const nearbyFuelSummary = priceBenchmark?.fuelSummaries[fuelType] ?? null;
   const nationalFuelSummary = nationalPriceBenchmark?.fuelSummaries[fuelType] ?? null;
   const stationSummary = useMemo<ReactNode>(() => {
@@ -466,7 +480,7 @@ export default function ClientMap({
       return `Local avg ${fuelLabel} is unavailable`;
     }
 
-    const localSummaryText = `Local ${fuelLabel} avg ${nearbyFuelSummary.averagePrice.toFixed(1)}p (${nearbyFuelSummary.stationCount} nearby)`;
+    const localSummaryText = `Local ${fuelLabel} avg ${nearbyFuelSummary.averagePrice.toFixed(1)}p (${nearbyFuelSummary.stationCount} in ${formatNearbyRadiusShortText(nearbyRadiusMiles)})`;
 
     if (!nationalFuelSummary || nationalFuelSummary.averagePrice === null) {
       return localSummaryText;
@@ -509,9 +523,57 @@ export default function ClientMap({
     hasAnyStationData,
     mapFocusLocation,
     matchingStationCount,
+    nearbyRadiusMiles,
     nationalFuelSummary,
     nearbyFuelSummary,
   ]);
+  const visibleStationAlertStates = useMemo(() => {
+    return stations.map((station) =>
+      buildStationAlertState({
+        baseline: hasLoadedAlertBaselines
+          ? alertBaselines[getAlertBaselineKey(station.id, fuelType)] ?? null
+          : null,
+        brand: station.brand,
+        currentPrices: station.currentPrices,
+        fuelType,
+        historicalPrices: station.fallbackPrices,
+        isBestWithinRadius: activeBestNearby?.stationId === station.id,
+        radiusMiles: nearbyRadiusMiles,
+        stationId: station.id,
+      }),
+    );
+  }, [
+    activeBestNearby,
+    alertBaselines,
+    fuelType,
+    hasLoadedAlertBaselines,
+    nearbyRadiusMiles,
+    stations,
+  ]);
+  const activeBestNearbyAlertState = useMemo(() => {
+    if (!activeBestNearby) {
+      return null;
+    }
+
+    return (
+      visibleStationAlertStates.find((state) => state.stationId === activeBestNearby.stationId) ?? null
+    );
+  }, [activeBestNearby, visibleStationAlertStates]);
+  const bestNearbySignalChips = useMemo(() => {
+    if (!activeBestNearbyAlertState) {
+      return [];
+    }
+
+    return activeBestNearbyAlertState.signals.filter(
+      (signal) => signal.kind !== 'bestWithin3Miles',
+    );
+  }, [activeBestNearbyAlertState]);
+  const otherNearbyAlertCount = useMemo(() => {
+    return visibleStationAlertStates.filter(
+      (state) => state.stationId !== activeBestNearby?.stationId && state.signals.length > 0,
+    ).length;
+  }, [activeBestNearby, visibleStationAlertStates]);
+  const bestNearbyAlertCount = bestNearbySignalChips.length + otherNearbyAlertCount;
 
   const cappedStationsMessage = useMemo(() => {
     if (!isStationResultsCapped || loadingStations || matchingStationCount <= stations.length) {
@@ -770,6 +832,21 @@ export default function ClientMap({
       window.removeEventListener('resize', updateMobileOverlayHeights);
     };
   }, [updateMobileOverlayHeights]);
+
+  useEffect(() => {
+    setAlertBaselines(browserAlertBaselineStore.readSnapshot());
+    setHasLoadedAlertBaselines(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hasLoadedAlertBaselines) {
+      return;
+    }
+
+    browserAlertBaselineStore.mergeEntries(
+      visibleStationAlertStates.map((state) => state.baselineEntry),
+    );
+  }, [hasLoadedAlertBaselines, visibleStationAlertStates]);
 
   useEffect(() => {
     if (!viewportCenter) {
@@ -1363,8 +1440,9 @@ export default function ClientMap({
 
   const bestNearbySummary = activeBestNearby ? (
     <>
-      Best nearby {fuelType} is <span className="font-semibold">{activeBestNearby.price.toFixed(1)}p</span>{' '}
-      at <span className="font-semibold">{activeBestNearby.brand || 'Unknown Brand'}</span>,{' '}
+      Best {fuelType} within {formatNearbyRadiusText(nearbyRadiusMiles)} is{' '}
+      <span className="font-semibold">{activeBestNearby.price.toFixed(1)}p</span> at{' '}
+      <span className="font-semibold">{activeBestNearby.brand || 'Unknown Brand'}</span>,{' '}
       {activeBestNearby.distanceMiles < 10
         ? `${activeBestNearby.distanceMiles.toFixed(1)} mi away`
         : `${Math.round(activeBestNearby.distanceMiles)} mi away`}
@@ -1382,6 +1460,30 @@ export default function ClientMap({
       )}
     </>
   ) : null;
+  const renderBestNearbySignalsSummary = () => {
+    if (bestNearbySignalChips.length === 0 && otherNearbyAlertCount === 0) {
+      return null;
+    }
+
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        {bestNearbySignalChips.map((signal) => (
+          <span
+            key={signal.kind}
+            className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${getAlertSignalToneClassName(signal)}`}
+            title={signal.detail}
+          >
+            {signal.shortLabel}
+          </span>
+        ))}
+        {otherNearbyAlertCount > 0 && (
+          <span className="rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700">
+            {otherNearbyAlertCount} more change{otherNearbyAlertCount === 1 ? '' : 's'} nearby
+          </span>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div ref={mapContainerRef} className="relative h-full w-full">
@@ -1582,6 +1684,7 @@ export default function ClientMap({
         mapFocusLocation={mapFocusLocation}
         userLocation={userLocation}
         selectedStationId={activeStationId}
+        bestStationId={activeBestNearby?.stationId ?? null}
         bestNearbyLocation={
           activeBestNearby
             ? {
@@ -1597,8 +1700,11 @@ export default function ClientMap({
       />
 
       <NearbyStationsList
+        alertBaselines={alertBaselines}
+        bestStationId={activeBestNearby?.stationId ?? null}
         stations={stations}
         fuelType={fuelType}
+        nearbyRadiusMiles={nearbyRadiusMiles}
         priceBenchmark={priceBenchmark}
         listOrigin={nearbyListOrigin}
         originLabel={nearbyListOriginLabel}
@@ -1637,8 +1743,11 @@ export default function ClientMap({
             </div>
 
             <NearbyStationsList
+              alertBaselines={alertBaselines}
+              bestStationId={activeBestNearby?.stationId ?? null}
               stations={stations}
               fuelType={fuelType}
+              nearbyRadiusMiles={nearbyRadiusMiles}
               priceBenchmark={priceBenchmark}
               listOrigin={nearbyListOrigin}
               originLabel={nearbyListOriginLabel}
@@ -1662,9 +1771,10 @@ export default function ClientMap({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <h3 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
-                  Best Nearby
+                  Best Within {formatNearbyRadiusText(nearbyRadiusMiles)}
                 </h3>
                 <p className="mt-2">{bestNearbySummary}</p>
+                {renderBestNearbySignalsSummary()}
               </div>
               <button
                 type="button"
@@ -1693,7 +1803,7 @@ export default function ClientMap({
           style={mobilePriceGuideStyle}
           className="pointer-events-none absolute bottom-[var(--mobile-price-guide-bottom)] left-3 right-3 z-20 sm:hidden"
         >
-          <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md">
+          <div className="pointer-events-auto rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-lg">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">
                 Price Guide
@@ -1711,7 +1821,9 @@ export default function ClientMap({
             <div className="mt-3 grid grid-cols-3 gap-3">
               <div className="flex min-w-0 items-center justify-center gap-1.5 text-center">
                 <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
-                <span className="text-xs font-medium leading-4 text-gray-700">Cheapest nearby</span>
+                <span className="text-xs font-medium leading-4 text-gray-700">
+                  Cheapest in {formatNearbyRadiusShortText(nearbyRadiusMiles)}
+                </span>
               </div>
               <div className="flex min-w-0 items-center justify-center gap-1.5 text-center">
                 <div className="h-3 w-3 shrink-0 rounded-full bg-amber-500"></div>
@@ -1865,7 +1977,7 @@ export default function ClientMap({
                     <div className="min-w-0">
                       <div className="flex items-center justify-between gap-3">
                         <h3 className="text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
-                          Best nearby
+                          Best Within {formatNearbyRadiusText(nearbyRadiusMiles)}
                         </h3>
                         <button
                           type="button"
@@ -1878,6 +1990,7 @@ export default function ClientMap({
                         </button>
                       </div>
                       <p className="mt-2 min-w-0">{bestNearbySummary}</p>
+                      {renderBestNearbySignalsSummary()}
                     </div>
                     <button
                       type="button"
@@ -1901,13 +2014,18 @@ export default function ClientMap({
                   aria-label="Show best nearby"
                 >
                   <Fuel className="h-4 w-4" />
-                  <span>Best nearby</span>
+                  <span>Best in {formatNearbyRadiusShortText(nearbyRadiusMiles)}</span>
+                  {bestNearbyAlertCount > 0 && (
+                    <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
+                      {bestNearbyAlertCount}
+                    </span>
+                  )}
                 </button>
               )}
             </>
           )}
 
-          <div className="pointer-events-auto mx-auto flex w-full max-w-lg flex-col gap-3 rounded-2xl border border-gray-100 bg-white/80 px-4 py-3 shadow-lg backdrop-blur-md sm:mx-0 sm:w-[28rem] sm:max-w-[28rem]">
+          <div className="pointer-events-auto mx-auto flex w-full max-w-lg flex-col gap-3 rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-lg sm:mx-0 sm:w-[28rem] sm:max-w-[28rem]">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
               Price Guide
             </h3>
@@ -1915,7 +2033,7 @@ export default function ClientMap({
               <div className="flex min-w-0 items-center gap-2">
                 <div className="h-3 w-3 shrink-0 rounded-full bg-emerald-500"></div>
                 <span className="truncate text-xs font-medium text-gray-700 sm:text-sm">
-                  Cheapest nearby
+                  Cheapest in {formatNearbyRadiusShortText(nearbyRadiusMiles)}
                 </span>
               </div>
               <div className="flex min-w-0 items-center gap-2">
@@ -1973,6 +2091,8 @@ export default function ClientMap({
       )}
 
       <StationDrawer
+        alertBaselines={alertBaselines}
+        bestStationId={activeBestNearby?.stationId ?? null}
         station={selectedStation}
         stations={stations}
         isOpen={isDrawerOpen}
@@ -1991,6 +2111,7 @@ export default function ClientMap({
           }
         }}
         fuelType={fuelType}
+        nearbyRadiusMiles={nearbyRadiusMiles}
         priceBenchmark={priceBenchmark}
         nationalPriceBenchmark={nationalPriceBenchmark}
         focusLocation={distanceReferenceLocation}

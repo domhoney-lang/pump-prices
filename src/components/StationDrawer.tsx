@@ -11,6 +11,14 @@ import type {
   StationDetailRecord,
   StationMapRecord,
 } from '@/app/actions/stations';
+import type { AlertBaselineSnapshot } from '@/lib/alert-baseline-store';
+import { getAlertBaselineKey } from '@/lib/alert-baseline-store';
+import {
+  buildStationAlertState,
+  getAlertSignalToneClassName,
+} from '@/lib/alert-signals';
+import { getFreshnessTone } from '@/lib/freshness';
+import { NEARBY_BENCHMARK_RADIUS_MILES } from '@/lib/nearby-benchmark';
 import {
   getPriceScale,
   getPriceSurfaceClassName,
@@ -28,9 +36,12 @@ type FocusLocation = {
 };
 
 interface StationDrawerProps {
+  alertBaselines: AlertBaselineSnapshot;
+  bestStationId: string | null;
   station: StationDetailRecord | null;
   stations: StationMapRecord[];
   isOpen: boolean;
+  nearbyRadiusMiles?: number;
   onClose: () => void;
   fuelType: 'unleaded' | 'diesel';
   priceBenchmark: PriceBenchmark | null;
@@ -44,29 +55,6 @@ type PriceInsight = {
   description: string;
   className: string;
 };
-
-function getFreshnessTone(updatedAt: Date) {
-  const ageHours = (Date.now() - updatedAt.getTime()) / (1000 * 60 * 60);
-
-  if (ageHours < 48) {
-    return {
-      badgeClassName: 'bg-emerald-100 text-emerald-700',
-      label: 'Fresh',
-    };
-  }
-
-  if (ageHours < 144) {
-    return {
-      badgeClassName: 'bg-amber-100 text-amber-700',
-      label: 'Still good',
-    };
-  }
-
-  return {
-    badgeClassName: 'bg-rose-100 text-rose-700',
-    label: 'Stale',
-  };
-}
 
 function toRadians(value: number) {
   return (value * Math.PI) / 180;
@@ -157,9 +145,12 @@ function getBenchmarkInsight(
 }
 
 export default function StationDrawer({
+  alertBaselines,
+  bestStationId,
   station,
   stations,
   isOpen,
+  nearbyRadiusMiles = NEARBY_BENCHMARK_RADIUS_MILES,
   onClose,
   fuelType,
   priceBenchmark,
@@ -232,13 +223,14 @@ export default function StationDrawer({
   const localAveragePrice = priceBenchmark?.fuelSummaries[fuelType].averagePrice ?? null;
   const nationalAveragePrice =
     nationalPriceBenchmark?.fuelSummaries[fuelType].averagePrice ?? null;
+  const nearbyBenchmarkLabel = `${nearbyRadiusMiles}-mile average`;
   const priceInsights = [
     getPriceInsight(
       latestPrice,
       previousTimelineEntry?.price ?? null,
       'since last price update',
     ),
-    getBenchmarkInsight(latestPrice, localAveragePrice, 'local average'),
+    getBenchmarkInsight(latestPrice, localAveragePrice, nearbyBenchmarkLabel),
     getBenchmarkInsight(latestPrice, nationalAveragePrice, 'national average'),
   ].filter((insight): insight is PriceInsight => insight !== null);
   const priceScale =
@@ -268,6 +260,16 @@ export default function StationDrawer({
   const distanceMiles = focusLocation ? getDistanceMiles(focusLocation, station) : null;
   const priceSurfaceClassName = getPriceSurfaceClassName(priceTone);
   const priceTextClassName = getPriceTextClassName(priceTone);
+  const alertSignals = buildStationAlertState({
+    baseline: alertBaselines[getAlertBaselineKey(station.id, fuelType)] ?? null,
+    brand: station.brand,
+    currentPrices: station.currentPrices,
+    fuelType,
+    historicalPrices: station.prices,
+    isBestWithinRadius: bestStationId === station.id,
+    radiusMiles: nearbyRadiusMiles,
+    stationId: station.id,
+  }).signals;
 
   return (
     <Drawer.Root
@@ -367,6 +369,24 @@ export default function StationDrawer({
                     </div>
                   ) : (
                     <p className="mb-6 text-sm text-slate-500">No recent price timestamp available.</p>
+                  )}
+                  {alertSignals.length > 0 && (
+                    <div className="mb-6">
+                      <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Signals
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        {alertSignals.map((signal) => (
+                          <span
+                            key={signal.kind}
+                            className={`rounded-full border px-3 py-1 text-xs font-semibold ${getAlertSignalToneClassName(signal)}`}
+                            title={signal.detail}
+                          >
+                            {signal.shortLabel}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
                   )}
                   {priceInsights.length > 0 && (
                     <div className="space-y-2.5">
