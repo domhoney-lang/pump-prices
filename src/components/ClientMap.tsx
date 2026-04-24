@@ -404,6 +404,7 @@ export default function ClientMap({
   const [hasLoadedAlertBaselines, setHasLoadedAlertBaselines] = useState(false);
   const [bestNearby, setBestNearby] = useState<BestNearby | null>(initialBestNearby);
   const [bestNearbyIsObscured, setBestNearbyIsObscured] = useState(false);
+  const [isDesktopViewport, setIsDesktopViewport] = useState(false);
   const [mapObstructionRects, setMapObstructionRects] = useState<OverlayRect[]>([]);
   const [mobileOverlayHeights, setMobileOverlayHeights] = useState({
     bottomControls: 0,
@@ -832,6 +833,23 @@ export default function ClientMap({
       window.removeEventListener('resize', updateMobileOverlayHeights);
     };
   }, [updateMobileOverlayHeights]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    const updateViewportMode = () => {
+      setIsDesktopViewport(window.innerWidth >= 640);
+    };
+
+    updateViewportMode();
+    window.addEventListener('resize', updateViewportMode);
+
+    return () => {
+      window.removeEventListener('resize', updateViewportMode);
+    };
+  }, []);
 
   useEffect(() => {
     setAlertBaselines(browserAlertBaselineStore.readSnapshot());
@@ -1834,10 +1852,12 @@ export default function ClientMap({
                 <span className="text-xs font-medium leading-4 text-gray-700">Most Expensive</span>
               </div>
             </div>
-            <PriceGuideSparkline
-              fuelType={fuelType}
-              nationalPriceBenchmark={nationalPriceBenchmark}
-            />
+            {!isDesktopViewport && (
+              <PriceGuideSparkline
+                fuelType={fuelType}
+                nationalPriceBenchmark={nationalPriceBenchmark}
+              />
+            )}
           </div>
         </div>
       )}
@@ -2049,10 +2069,12 @@ export default function ClientMap({
                 </span>
               </div>
             </div>
-            <PriceGuideSparkline
-              fuelType={fuelType}
-              nationalPriceBenchmark={nationalPriceBenchmark}
-            />
+            {isDesktopViewport && (
+              <PriceGuideSparkline
+                fuelType={fuelType}
+                nationalPriceBenchmark={nationalPriceBenchmark}
+              />
+            )}
           </div>
         </div>
       )}

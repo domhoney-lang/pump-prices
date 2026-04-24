@@ -12,6 +12,8 @@ When editing the map and price-guide UI, keep the price-guide chart card visuall
 - Do not reintroduce translucent glass styling on the price-guide card. Avoid `bg-white/80`, `bg-white/90`, or `backdrop-blur-*` on that card container.
 - The chart should not show blurred map markers, map tiles, or other background colors through the card.
 - The UK average series must be a carried-forward daily market average: each day should reflect the latest known price for all stations as of that day, not just the subset of stations that changed on that day.
+- The benchmark history window should end at the latest available benchmark timestamp in the data, not blindly at today's date. Do not render a misleading flat tail just because local data is stale.
+- Do not mount the Recharts sparkline inside a hidden breakpoint variant. Only render the price-guide chart in the active mobile or desktop card, otherwise Recharts can measure a `0x0` container and regress.
 - Keep the chart presentation clean and data-first: crisp line, subtle area fill, readable labels, and no decorative marker badges inside the chart card.
 
 Example:

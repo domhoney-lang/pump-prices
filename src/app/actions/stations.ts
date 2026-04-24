@@ -489,13 +489,33 @@ function isFuelType(value: string): value is FuelType {
   return FUEL_TYPES.includes(value as FuelType);
 }
 
-function getNationalHistoryWindowStart() {
-  const historyWindowStart = new Date();
+function getHistoryWindowStartFromEnd(windowEnd: Date) {
+  const historyWindowStart = new Date(windowEnd);
   historyWindowStart.setUTCHours(0, 0, 0, 0);
   historyWindowStart.setUTCDate(
     historyWindowStart.getUTCDate() - (NATIONAL_PRICE_HISTORY_WINDOW_DAYS - 1),
   );
   return historyWindowStart;
+}
+
+async function getNationalHistoryWindowRange() {
+  const latestHistory = await prisma.priceHistory.aggregate({
+    _max: {
+      timestamp: true,
+    },
+    where: {
+      fuelType: {
+        in: [...FUEL_TYPES],
+      },
+    },
+  });
+  const windowEnd = latestHistory._max.timestamp ?? new Date();
+  const windowStart = getHistoryWindowStartFromEnd(windowEnd);
+
+  return {
+    windowEnd,
+    windowStart,
+  };
 }
 
 function getUtcDayKey(date: Date) {
@@ -550,9 +570,9 @@ function normalizeBenchmarkHistoryRow(row: {
 async function buildNationalBenchmarkHistory(): Promise<
   Record<FuelType, FuelBenchmarkHistoryPoint[]>
 > {
-  const historyWindowStart = getNationalHistoryWindowStart();
+  const { windowEnd, windowStart } = await getNationalHistoryWindowRange();
   const historyDayKeys = getUtcDayKeysInWindow(
-    historyWindowStart,
+    windowStart,
     NATIONAL_PRICE_HISTORY_WINDOW_DAYS,
   );
   const [baselineRows, historyRows] = await Promise.all([
@@ -573,7 +593,7 @@ async function buildNationalBenchmarkHistory(): Promise<
           "timestamp"
         FROM "PriceHistory"
         WHERE LOWER("fuelType") IN (${Prisma.join(FUEL_TYPES)})
-          AND "timestamp" < ${historyWindowStart}
+          AND "timestamp" < ${windowStart}
         ORDER BY "stationId", "fuelType", "timestamp" DESC
       ) AS baseline
     `),
@@ -583,7 +603,8 @@ async function buildNationalBenchmarkHistory(): Promise<
           in: [...FUEL_TYPES],
         },
         timestamp: {
-          gte: historyWindowStart,
+          gte: windowStart,
+          lte: windowEnd,
         },
       },
       select: {
@@ -720,6 +741,14 @@ const getCachedNationalBenchmark = unstable_cache(
     revalidate: 60 * 60 * 24 * 7,
   },
 );
+
+async function getNationalBenchmark() {
+  if (process.env.NODE_ENV !== 'production' || isLocalPrismaDevDatabase()) {
+    return buildNationalBenchmark();
+  }
+
+  return getCachedNationalBenchmark();
+}
 
 function getRadiusBounds(centerLat: number, centerLng: number, radiusMiles: number): StationBoundsInput {
   const milesPerLatDegree = 69;
@@ -944,7 +973,7 @@ async function loadStations(bounds?: StationBoundsInput, options?: StationQueryO
       ? buildNearbyBenchmark(bounds)
       : Promise.resolve(null);
   const nationalPriceBenchmarkPromise = options?.includeNationalBenchmark
-    ? getCachedNationalBenchmark()
+    ? getNationalBenchmark()
     : Promise.resolve(undefined);
   const [nearbyBenchmarkData, nationalPriceBenchmark] = isLocalPrismaDevDatabase()
     ? [await nearbyBenchmarkPromise, await nationalPriceBenchmarkPromise]
@@ -967,7 +996,7 @@ async function loadStations(bounds?: StationBoundsInput, options?: StationQueryO
 export async function getStations() {
   return withSerializedLocalPrisma(async () => {
     const stationDataPromise = loadStations();
-    const nationalPriceBenchmarkPromise = getCachedNationalBenchmark();
+    const nationalPriceBenchmarkPromise = getNationalBenchmark();
     const [stationData, nationalPriceBenchmark] = isLocalPrismaDevDatabase()
       ? [await stationDataPromise, await nationalPriceBenchmarkPromise]
       : await Promise.all([stationDataPromise, nationalPriceBenchmarkPromise]);
