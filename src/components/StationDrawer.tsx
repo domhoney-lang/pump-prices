@@ -1,7 +1,7 @@
 'use client';
 
 import { Drawer } from 'vaul';
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { format, formatDistanceToNow, subDays } from 'date-fns';
 import { MapPin, Navigation, X } from 'lucide-react';
 
@@ -197,9 +197,33 @@ export default function StationDrawer({
   const chartData = priceTimeline
     .filter((entry) => entry.timestamp >= priceHistoryWindowStart)
     .map((entry) => ({
-      date: format(entry.timestamp, 'MMM dd'),
+      date: format(entry.timestamp, 'd MMM'),
+      fullDate: format(entry.timestamp, 'EEEE d MMMM'),
       price: entry.price,
     }));
+  const chartPrices = chartData.map((entry) => entry.price);
+  const chartMinPrice = chartPrices.length > 0 ? Math.min(...chartPrices) : null;
+  const chartMaxPrice = chartPrices.length > 0 ? Math.max(...chartPrices) : null;
+  const chartDomainPadding =
+    chartMinPrice !== null && chartMaxPrice !== null
+      ? Math.max(0.8, (chartMaxPrice - chartMinPrice) * 0.3)
+      : 1;
+  const chartDomain =
+    chartMinPrice !== null && chartMaxPrice !== null
+      ? [chartMinPrice - chartDomainPadding, chartMaxPrice + chartDomainPadding]
+      : undefined;
+  const chartPriceChange =
+    chartData.length > 1 ? chartData[chartData.length - 1]!.price - chartData[0]!.price : 0;
+  const chartPriceChangeClassName =
+    chartPriceChange < 0
+      ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+      : chartPriceChange > 0
+        ? 'border-rose-200 bg-rose-50 text-rose-700'
+        : 'border-gray-200 bg-gray-50 text-gray-600';
+  const chartPriceChangeLabel =
+    chartPriceChange === 0
+      ? 'No change'
+      : `${chartPriceChange < 0 ? 'Down' : 'Up'} ${Math.abs(chartPriceChange).toFixed(1)}p`;
   const latestTimelineEntry = priceTimeline.at(-1) ?? null;
   const previousTimelineEntry = priceTimeline.at(-2) ?? null;
   const latestPrice = latestTimelineEntry?.price ?? null;
@@ -353,49 +377,97 @@ export default function StationDrawer({
                   Last {PRICE_HISTORY_WINDOW_DAYS} Days
                 </span>
               </div>
-              
-              <div className="h-56 w-full bg-white border border-gray-100 rounded-2xl pt-5 pb-3 pr-5 shadow-sm">
+
+              {chartData.length > 0 && (
+                <div className="mb-4 grid grid-cols-3 gap-2">
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50/80 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">Low</p>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {chartMinPrice?.toFixed(1)}p
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-gray-200 bg-gray-50/80 px-3 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">High</p>
+                    <p className="mt-1 text-lg font-semibold text-gray-900">
+                      {chartMaxPrice?.toFixed(1)}p
+                    </p>
+                  </div>
+                  <div className={`rounded-2xl border px-3 py-3 ${chartPriceChangeClassName}`}>
+                    <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
+                      30d Change
+                    </p>
+                    <p className="mt-1 text-lg font-semibold">{chartPriceChangeLabel}</p>
+                  </div>
+                </div>
+              )}
+
+              <div className="h-64 w-full rounded-3xl border border-blue-100 bg-gradient-to-b from-blue-50/70 via-white to-white px-3 pb-3 pt-4 shadow-sm">
                 {chartData.length > 0 ? (
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
-                      <XAxis 
-                        dataKey="date" 
-                        fontSize={12} 
+                    <AreaChart
+                      data={chartData}
+                      margin={{ top: 8, right: 8, left: -12, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient id="price-history-fill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.22} />
+                          <stop offset="100%" stopColor="#3b82f6" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid
+                        vertical={false}
+                        stroke="#dbeafe"
+                        strokeDasharray="4 4"
+                      />
+                      <XAxis
+                        dataKey="date"
+                        fontSize={12}
                         tickLine={false}
                         axisLine={false}
-                        dy={10}
+                        tickMargin={12}
+                        minTickGap={24}
                         tick={{ fill: '#6b7280' }}
                       />
-                      <YAxis 
-                        domain={['dataMin - 1', 'dataMax + 1']} 
+                      <YAxis
+                        width={42}
+                        domain={chartDomain}
+                        tickCount={4}
                         fontSize={12}
                         tickLine={false}
                         axisLine={false}
                         tickFormatter={(value) => `${value.toFixed(1)}`}
                         tick={{ fill: '#6b7280' }}
                       />
-                      <Tooltip 
-                        contentStyle={{ 
-                          borderRadius: '12px', 
-                          border: '1px solid #e5e7eb', 
+                      <Tooltip
+                        cursor={{ stroke: '#93c5fd', strokeDasharray: '4 4' }}
+                        labelFormatter={(_, payload) => payload?.[0]?.payload?.fullDate ?? ''}
+                        contentStyle={{
+                          borderRadius: '16px',
+                          border: '1px solid #dbeafe',
                           boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
-                          padding: '8px 12px',
+                          padding: '10px 12px',
                           fontWeight: 500
                         }}
                         itemStyle={{ color: '#1f2937', fontWeight: 600 }}
                         formatter={(value) => [`${Number(value ?? 0).toFixed(1)}p`, 'Price']}
                         labelStyle={{ color: '#6b7280', marginBottom: '4px', fontSize: '12px' }}
                       />
-                      <Line 
-                        type="monotone" 
-                        dataKey="price" 
-                        stroke="#3b82f6" 
+                      <Area
+                        type="monotone"
+                        dataKey="price"
+                        stroke="#2563eb"
                         strokeWidth={3}
-                        dot={{ r: 4, strokeWidth: 2, fill: '#ffffff' }}
-                        activeDot={{ r: 6, stroke: '#3b82f6', strokeWidth: 2, fill: '#ffffff' }}
+                        fill="url(#price-history-fill)"
+                        fillOpacity={1}
+                        dot={
+                          chartData.length <= 8
+                            ? { r: 3.5, strokeWidth: 2, stroke: '#2563eb', fill: '#ffffff' }
+                            : false
+                        }
+                        activeDot={{ r: 5, stroke: '#2563eb', strokeWidth: 2, fill: '#ffffff' }}
                         animationDuration={1000}
                       />
-                    </LineChart>
+                    </AreaChart>
                   </ResponsiveContainer>
                 ) : (
                   <div className="flex items-center justify-center h-full text-gray-400 text-sm font-medium">

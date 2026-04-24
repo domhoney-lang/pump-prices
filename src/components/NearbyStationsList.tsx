@@ -2,11 +2,16 @@
 
 import type { CSSProperties } from 'react';
 import { format, formatDistanceToNow } from 'date-fns';
-import { MapPin, Navigation } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useMemo, useState, type Ref } from 'react';
 
 import type { PriceBenchmark, StationMapRecord } from '@/app/actions/stations';
-import { getPriceScale, getPriceTextClassName, getPriceTone } from '@/lib/price-colors';
+import {
+  getPriceScale,
+  getPriceSurfaceClassName,
+  getPriceTextClassName,
+  getPriceTone,
+} from '@/lib/price-colors';
 
 const FIXED_REFUEL_VOLUME_LITRES = 50;
 const gbpFormatter = new Intl.NumberFormat('en-GB', {
@@ -33,6 +38,7 @@ interface NearbyStationsListProps {
   className?: string;
   style?: CSSProperties;
   containerRef?: Ref<HTMLElement>;
+  variant?: 'panel' | 'sheet';
 }
 
 type NearbyStationListItem = {
@@ -103,12 +109,8 @@ function formatDistanceMiles(distanceMiles: number) {
   return `${Math.round(distanceMiles)} mi`;
 }
 
-function getDirectionsUrl(lat: number, lng: number) {
-  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}`;
-}
-
 function formatRefuelCost(pricePence: number, litres: number) {
-  return `${litres}L: ${gbpFormatter.format((pricePence * litres) / 100)}`;
+  return `${litres}L ${gbpFormatter.format((pricePence * litres) / 100)}`;
 }
 
 function getAverageComparison(
@@ -156,6 +158,7 @@ export default function NearbyStationsList({
   className,
   style,
   containerRef,
+  variant = 'panel',
 }: NearbyStationsListProps) {
   const [sortMode, setSortMode] = useState<NearbySortMode>('cheapest');
   const priceScale = useMemo(() => {
@@ -179,7 +182,7 @@ export default function NearbyStationsList({
     );
   }, [fuelType, priceBenchmark, stations]);
 
-  const nearbyStations = useMemo<NearbyStationListItem[]>(() => {
+  const processedNearbyStations = useMemo<NearbyStationListItem[]>(() => {
     if (!listOrigin) {
       return [];
     }
@@ -226,6 +229,10 @@ export default function NearbyStationsList({
             : null,
         };
       })
+  }, [fuelType, listOrigin, priceBenchmark, stations]);
+
+  const nearbyStations = useMemo(() => {
+    return [...processedNearbyStations]
       .sort((left, right) => {
         if (sortMode === 'cheapest') {
           if (left.price === null && right.price === null) {
@@ -278,45 +285,73 @@ export default function NearbyStationsList({
         return left.station.id.localeCompare(right.station.id);
       })
       .slice(0, 10);
-  }, [fuelType, listOrigin, priceBenchmark, sortMode, stations]);
+  }, [processedNearbyStations, sortMode]);
+
+  const bestValueStationId = useMemo(() => {
+    const bestValueStation = [...processedNearbyStations]
+      .filter((station) => station.price !== null)
+      .sort((left, right) => {
+        if (left.price !== right.price) {
+          return (left.price ?? Infinity) - (right.price ?? Infinity);
+        }
+
+        if (left.distanceMiles !== right.distanceMiles) {
+          return left.distanceMiles - right.distanceMiles;
+        }
+
+        return left.station.id.localeCompare(right.station.id);
+      })[0];
+
+    return bestValueStation?.station.id ?? null;
+  }, [processedNearbyStations]);
 
   if (!listOrigin) {
     return null;
   }
   const noPricesForFuel =
     nearbyStations.length > 0 && nearbyStations.every((station) => station.price === null);
+  const isSheet = variant === 'sheet';
+  const visibleCount = nearbyStations.length;
+  const totalNearbyCount = processedNearbyStations.length;
+  const sortDescription =
+    sortMode === 'nearest' ? `sorted by nearest to ${originLabel}` : 'sorted by cheapest nearby';
+  const subtitleText =
+    totalNearbyCount > visibleCount
+      ? `Top ${visibleCount} of ${totalNearbyCount} • ${sortDescription}`
+      : `${totalNearbyCount} stations • ${sortDescription}`;
 
   return (
     <section
       ref={containerRef}
       style={style}
-      className={`pointer-events-auto rounded-2xl border border-gray-100 bg-white/90 p-4 shadow-xl backdrop-blur-md ${
-        className ?? ''
-      }`}
+      className={`${
+        isSheet
+          ? 'flex h-full flex-col bg-white'
+          : 'pointer-events-auto rounded-[28px] border border-gray-100 bg-white/92 p-4 shadow-xl backdrop-blur-md'
+      } ${className ?? ''}`}
       aria-label="Nearby stations"
     >
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-900">
-            Nearby Stations
-          </h2>
-          <p className="mt-1 text-sm text-gray-500">
-            {sortMode === 'nearest'
-              ? `Sorted by nearest to ${originLabel}`
-              : 'Sorted by cheapest nearby'}
-          </p>
+      <div
+        className={
+          isSheet ? 'border-b border-gray-100 px-5 pb-4 pt-1' : 'flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between'
+        }
+      >
+        <div className={isSheet ? '' : 'min-w-0'}>
+          <h2 className="text-base font-semibold tracking-tight text-gray-950">Nearby stations</h2>
+          <p className="mt-1 text-sm text-gray-500">{subtitleText}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex items-center gap-1 rounded-full bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
-            <Navigation className="h-3.5 w-3.5" />
-            <span>Top 10</span>
+        <div className={`${isSheet ? 'mt-3 flex flex-wrap items-center gap-2' : 'flex flex-wrap items-center gap-2'}`}>
+          <div className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">
+            Top {visibleCount}
           </div>
           <div className="inline-flex items-center rounded-full bg-gray-100 p-1 text-xs font-medium text-gray-600">
             <button
               type="button"
               onClick={() => setSortMode('cheapest')}
-              className={`rounded-full px-2.5 py-1 transition-colors ${
-                sortMode === 'cheapest' ? 'bg-white text-gray-900 shadow-sm' : 'hover:text-gray-800'
+              className={`rounded-full px-3 py-1.5 transition-colors ${
+                sortMode === 'cheapest'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800'
               }`}
               aria-pressed={sortMode === 'cheapest'}
             >
@@ -325,8 +360,10 @@ export default function NearbyStationsList({
             <button
               type="button"
               onClick={() => setSortMode('nearest')}
-              className={`rounded-full px-2.5 py-1 transition-colors ${
-                sortMode === 'nearest' ? 'bg-white text-gray-900 shadow-sm' : 'hover:text-gray-800'
+              className={`rounded-full px-3 py-1.5 transition-colors ${
+                sortMode === 'nearest'
+                  ? 'bg-white text-gray-900 shadow-sm'
+                  : 'text-gray-500 hover:text-gray-800'
               }`}
               aria-pressed={sortMode === 'nearest'}
             >
@@ -337,99 +374,119 @@ export default function NearbyStationsList({
       </div>
 
       {loading && nearbyStations.length === 0 ? (
-        <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+        <div className={`${isSheet ? 'mx-5 mt-5' : 'mt-4'} rounded-2xl border border-gray-100 bg-gray-50 px-4 py-6 text-sm text-gray-500`}>
           Finding nearby stations...
         </div>
       ) : nearbyStations.length === 0 ? (
-        <div className="mt-4 rounded-xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500">
+        <div className={`${isSheet ? 'mx-5 mt-5' : 'mt-4'} rounded-2xl border border-dashed border-gray-200 bg-gray-50 px-4 py-6 text-sm text-gray-500`}>
           No stations in the current nearby area. Try zooming out or moving the map.
         </div>
       ) : (
         <>
           {noPricesForFuel && (
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <div className={`${isSheet ? 'mx-5 mt-5' : 'mt-4'} rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800`}>
               Nearby stations were found, but none currently have {fuelType} prices in the nearby
               benchmark area.
             </div>
           )}
 
-          <div className="mt-4 max-h-[24dvh] space-y-2 overflow-y-auto overscroll-contain pr-1 sm:max-h-[45dvh]">
+          <div
+            className={`${
+              isSheet
+                ? 'mt-5 flex-1 space-y-3 overflow-y-auto overscroll-contain px-5 pb-[max(1.25rem,env(safe-area-inset-bottom))]'
+                : 'mt-4 max-h-[24dvh] space-y-3 overflow-y-auto overscroll-contain pr-1 sm:max-h-[45dvh]'
+            }`}
+          >
             {nearbyStations.map((item) => {
-              const priceTextClassName = getPriceTextClassName(getPriceTone(item.price, priceScale));
+              const priceTone = getPriceTone(item.price, priceScale);
+              const priceTextClassName = getPriceTextClassName(priceTone);
+              const priceSurfaceClassName = getPriceSurfaceClassName(priceTone);
+              const isSelected = selectedStationId === item.station.id;
+              const isBestValue = item.station.id === bestValueStationId;
+              const showStaleBadge = item.freshnessLabel === 'Stale';
 
               return (
-                <div
+                <button
+                  type="button"
                   key={item.station.id}
-                  className={`block w-full rounded-xl border px-4 py-3 text-left transition-colors ${
-                    selectedStationId === item.station.id
-                      ? 'border-blue-200 bg-blue-50/80'
-                      : 'border-gray-100 bg-white hover:bg-gray-50'
+                  onClick={() => onStationSelect(item.station.id)}
+                  className={`group block w-full rounded-[22px] border p-4 text-left transition-all ${
+                    isSelected
+                      ? 'border-blue-200 bg-blue-50/80 shadow-sm'
+                      : isBestValue
+                        ? 'border-emerald-200 bg-emerald-50/70 shadow-sm'
+                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
                   }`}
                 >
-                  <button
-                    type="button"
-                    onClick={() => onStationSelect(item.station.id)}
-                    className="block w-full text-left"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <span className="min-w-0 truncate text-sm font-semibold text-gray-900">
-                        {item.station.brand || 'Unknown Brand'}
-                      </span>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {item.freshnessLabel && item.freshnessBadgeClassName && (
-                          <span
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.freshnessBadgeClassName}`}
-                            title={item.freshnessTitle ?? undefined}
-                          >
-                            {item.freshnessLabel}
-                          </span>
-                        )}
-                        <span
-                          className="text-xs text-gray-500"
-                          title={item.freshnessTitle ?? undefined}
-                        >
-                          {item.freshnessRelativeText ?? 'No recent timestamp'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="mt-3 flex items-end justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className={`text-lg font-bold ${priceTextClassName}`}>
-                          {item.price !== null ? `${item.price.toFixed(1)}p` : 'N/A'}
-                        </div>
-                        <div className="text-xs text-gray-500">{fuelType}</div>
-                        {item.refuelCostText && (
-                          <div className="mt-1 text-xs font-medium text-gray-700">
-                            {item.refuelCostText}
-                          </div>
-                        )}
-                        {item.averageComparisonText && item.averageComparisonClassName && (
-                          <div
-                            className={`mt-1 text-[11px] font-medium ${item.averageComparisonClassName}`}
-                          >
-                            {item.averageComparisonText}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </button>
-                  <div className="mt-3 flex items-center justify-between gap-3">
-                    <span className="inline-flex items-center gap-1 text-sm text-gray-600">
-                      <MapPin className="h-3.5 w-3.5" />
-                      {formatDistanceMiles(item.distanceMiles)}
-                    </span>
-                    <a
-                      href={getDirectionsUrl(item.station.lat, item.station.lng)}
-                      target="_blank"
-                      rel="noreferrer"
-                      aria-label="Open directions in Google Maps"
-                      title="Open in Google Maps"
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-gray-200 text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50"
+                  <div className="flex items-start gap-4">
+                    <div
+                      className={`flex w-20 shrink-0 flex-col rounded-2xl border px-3 py-3 shadow-sm ${priceSurfaceClassName}`}
                     >
-                      <Navigation className="h-4 w-4" />
-                    </a>
+                      <span className={`text-2xl font-bold tracking-tight ${priceTextClassName}`}>
+                        {item.price !== null ? `${item.price.toFixed(1)}p` : 'N/A'}
+                      </span>
+                      <span className="mt-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-500">
+                        {fuelType}
+                      </span>
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-[15px] font-semibold text-gray-950">
+                            {item.station.brand || 'Unknown Brand'}
+                          </div>
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            {isBestValue && (
+                              <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+                                Best value
+                              </span>
+                            )}
+                            {showStaleBadge && item.freshnessBadgeClassName && (
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${item.freshnessBadgeClassName}`}
+                                title={item.freshnessTitle ?? undefined}
+                              >
+                                {item.freshnessLabel}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-start gap-2 pl-2">
+                          <div className="text-right">
+                            <div className="text-sm font-semibold text-gray-950">
+                              {formatDistanceMiles(item.distanceMiles)}
+                            </div>
+                            <div
+                              className="mt-1 text-xs text-gray-500"
+                              title={item.freshnessTitle ?? undefined}
+                            >
+                              {item.freshnessRelativeText ?? 'No recent update'}
+                            </div>
+                          </div>
+                          <ChevronRight className="mt-0.5 h-4 w-4 text-gray-300 transition-transform group-hover:translate-x-0.5" />
+                        </div>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[13px]">
+                        {item.averageComparisonText && item.averageComparisonClassName ? (
+                          <span className={`font-semibold ${item.averageComparisonClassName}`}>
+                            {item.averageComparisonText}
+                          </span>
+                        ) : (
+                          <span className="text-gray-500">Price in line with nearby stations</span>
+                        )}
+                        {item.refuelCostText && (
+                          <>
+                            <span className="text-gray-300">•</span>
+                            <span className="font-medium text-gray-500">{item.refuelCostText}</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </button>
               );
             })}
           </div>

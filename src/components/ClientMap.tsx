@@ -22,6 +22,7 @@ import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { Fuel, Info, List, LocateFixed, Search, X } from 'lucide-react';
 import { Area, AreaChart, Line, ResponsiveContainer, YAxis } from 'recharts';
+import { Drawer } from 'vaul';
 
 import {
   searchLocation,
@@ -91,7 +92,6 @@ const MAP_LOADING_SHOW_DELAY_MS = 150;
 const MOBILE_PRICE_GUIDE_STORAGE_KEY = 'pump-prices:mobile-price-guide:v1';
 const MOBILE_BOTTOM_CONTROLS_BOTTOM_PX = 24;
 const MOBILE_OVERLAY_STACK_GAP_PX = 16;
-const MOBILE_NEARBY_LIST_HIDDEN_OFFSET_PX = 16;
 const USER_LOCATION_ACTIVE_RADIUS_MILES = 0.25;
 const USER_LOCATION_FOCUS_ZOOM = 13;
 const priceGuideDateFormatter = new Intl.DateTimeFormat('en-GB', {
@@ -408,7 +408,8 @@ export default function ClientMap({
   const lastAutoRefreshAtRef = useRef(0);
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const topChromeRef = useRef<HTMLDivElement | null>(null);
-  const nearbyListRef = useRef<HTMLElement | null>(null);
+  const desktopNearbyListRef = useRef<HTMLElement | null>(null);
+  const mobileNearbySheetRef = useRef<HTMLDivElement | null>(null);
   const mobileBestNearbyRef = useRef<HTMLDivElement | null>(null);
   const mobilePriceGuideRef = useRef<HTMLDivElement | null>(null);
   const mobileBottomControlsRef = useRef<HTMLDivElement | null>(null);
@@ -561,44 +562,27 @@ export default function ClientMap({
   const showMobilePriceGuide = hasStations && isMobilePriceGuideVisible;
   const showMobileBestNearbyButton = activeBestNearby !== null && bestNearbyNeedsAttention;
   const showMobileBestNearbyCard = showMobileBestNearbyButton && isCurrentBestNearbyOpen;
+  const showMobilePriceGuideCard = showMobilePriceGuide && !isNearbyListOpen;
+  const showMobileBestNearbyNotice = showMobileBestNearbyCard && !isNearbyListOpen;
+  const showMobileBottomControls = !isNearbyListOpen;
   const showDesktopBestNearbyButton = showOffscreenBestNearbyAlert;
   const showDesktopBestNearbyCard = showDesktopBestNearbyButton && isCurrentBestNearbyOpen;
   const mobilePriceGuideBottomPx =
     MOBILE_BOTTOM_CONTROLS_BOTTOM_PX +
     mobileOverlayHeights.bottomControls +
     MOBILE_OVERLAY_STACK_GAP_PX;
-  const mobileBestNearbyBottomPx = showMobilePriceGuide
+  const mobileBestNearbyBottomPx = showMobilePriceGuideCard
     ? mobilePriceGuideBottomPx +
       mobileOverlayHeights.priceGuide +
       MOBILE_OVERLAY_STACK_GAP_PX
     : MOBILE_BOTTOM_CONTROLS_BOTTOM_PX +
       mobileOverlayHeights.bottomControls +
       MOBILE_OVERLAY_STACK_GAP_PX;
-  const mobileNearbyListBaseBottomPx = showMobileBestNearbyCard
-    ? mobileBestNearbyBottomPx +
-      mobileOverlayHeights.bestNearby +
-      MOBILE_OVERLAY_STACK_GAP_PX
-    : showMobilePriceGuide
-      ? mobilePriceGuideBottomPx +
-        mobileOverlayHeights.priceGuide +
-        MOBILE_OVERLAY_STACK_GAP_PX
-      : MOBILE_BOTTOM_CONTROLS_BOTTOM_PX +
-        mobileOverlayHeights.bottomControls +
-        MOBILE_OVERLAY_STACK_GAP_PX;
-  const mobileNearbyListBottomPx = isNearbyListOpen
-    ? mobileNearbyListBaseBottomPx
-    : Math.max(
-        MOBILE_BOTTOM_CONTROLS_BOTTOM_PX,
-        mobileNearbyListBaseBottomPx - MOBILE_NEARBY_LIST_HIDDEN_OFFSET_PX,
-      );
   const mobilePriceGuideStyle = {
     '--mobile-price-guide-bottom': `${mobilePriceGuideBottomPx}px`,
   } as CSSProperties;
   const mobileBestNearbyStyle = {
     '--mobile-best-nearby-bottom': `${mobileBestNearbyBottomPx}px`,
-  } as CSSProperties;
-  const mobileNearbyListStyle = {
-    '--mobile-nearby-list-bottom': `${mobileNearbyListBottomPx}px`,
   } as CSSProperties;
 
   const updateMobileOverlayHeights = useCallback(() => {
@@ -624,11 +608,11 @@ export default function ClientMap({
         mobileBottomControlsRef.current?.getBoundingClientRect().height ?? 0,
       ),
       priceGuide:
-        showMobilePriceGuide && mobilePriceGuideRef.current
+        showMobilePriceGuideCard && mobilePriceGuideRef.current
           ? Math.round(mobilePriceGuideRef.current.getBoundingClientRect().height)
           : 0,
       bestNearby:
-        showMobileBestNearbyCard && mobileBestNearbyRef.current
+        showMobileBestNearbyNotice && mobileBestNearbyRef.current
           ? Math.round(mobileBestNearbyRef.current.getBoundingClientRect().height)
           : 0,
     };
@@ -638,7 +622,7 @@ export default function ClientMap({
         ? currentHeights
         : nextHeights,
     );
-  }, [showMobileBestNearbyCard, showMobilePriceGuide]);
+  }, [showMobileBestNearbyNotice, showMobilePriceGuideCard]);
 
   const updateMapObstructionRects = useCallback(() => {
     const mapContainer = mapContainerRef.current;
@@ -680,7 +664,7 @@ export default function ClientMap({
 
     if (isDesktop) {
       if (viewportCenter) {
-        addRect(nearbyListRef.current);
+        addRect(desktopNearbyListRef.current);
         addRect(desktopNearbyToggleRef.current);
       }
 
@@ -689,24 +673,33 @@ export default function ClientMap({
       }
     } else {
       if (viewportCenter && isNearbyListOpen) {
-        addRect(nearbyListRef.current);
-      }
+        addRect(mobileNearbySheetRef.current);
+      } else {
+        if (showMobileBestNearbyNotice) {
+          addRect(mobileBestNearbyRef.current);
+        }
 
-      if (showMobileBestNearbyCard) {
-        addRect(mobileBestNearbyRef.current);
-      }
+        if (showMobilePriceGuideCard) {
+          addRect(mobilePriceGuideRef.current);
+        }
 
-      if (showMobilePriceGuide) {
-        addRect(mobilePriceGuideRef.current);
+        if (showMobileBottomControls) {
+          addRect(mobileBottomControlsRef.current);
+        }
       }
-
-      addRect(mobileBottomControlsRef.current);
     }
 
     setMapObstructionRects((currentRects) =>
       areOverlayRectsEqual(currentRects, nextRects) ? currentRects : nextRects,
     );
-  }, [hasStations, isNearbyListOpen, showMobileBestNearbyCard, showMobilePriceGuide, viewportCenter]);
+  }, [
+    hasStations,
+    isNearbyListOpen,
+    showMobileBestNearbyNotice,
+    showMobileBottomControls,
+    showMobilePriceGuideCard,
+    viewportCenter,
+  ]);
 
   useLayoutEffect(() => {
     updateMapObstructionRects();
@@ -718,7 +711,8 @@ export default function ClientMap({
     const observedElements = [
       mapContainerRef.current,
       topChromeRef.current,
-      nearbyListRef.current,
+      desktopNearbyListRef.current,
+      mobileNearbySheetRef.current,
       mobileBestNearbyRef.current,
       mobilePriceGuideRef.current,
       mobileBottomControlsRef.current,
@@ -1574,16 +1568,53 @@ export default function ClientMap({
         loading={loadingStations}
         selectedStationId={activeStationId}
         onStationSelect={handleStationSelect}
-        containerRef={nearbyListRef}
-        className={`absolute left-3 right-3 z-20 max-h-[36dvh] overflow-hidden transition-all duration-200 bottom-[var(--mobile-nearby-list-bottom)] ${
-          isNearbyListOpen ? 'opacity-100' : 'pointer-events-none translate-y-2 opacity-0'
-        } sm:left-6 sm:right-auto sm:w-full sm:max-w-sm sm:max-h-none sm:translate-y-0 ${
-          isNearbyListOpen ? 'sm:bottom-6' : 'sm:bottom-2'
+        containerRef={desktopNearbyListRef}
+        className={`pointer-events-none absolute bottom-6 left-6 z-20 hidden w-full max-w-sm overflow-hidden transition-all duration-200 sm:block ${
+          isNearbyListOpen ? 'sm:pointer-events-auto sm:opacity-100' : 'sm:translate-y-2 sm:opacity-0'
         }`}
-        style={mobileNearbyListStyle}
       />
 
-      {showMobileBestNearbyCard && activeBestNearby && (
+      <Drawer.Root open={Boolean(viewportCenter) && isNearbyListOpen} onOpenChange={setIsNearbyListOpen}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 z-30 bg-slate-950/18 backdrop-blur-[1px] sm:hidden" />
+          <Drawer.Content
+            ref={mobileNearbySheetRef}
+            className="fixed inset-x-0 bottom-0 z-40 flex h-[60dvh] max-h-[78dvh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl outline-none sm:hidden"
+          >
+            <div className="border-b border-gray-100 px-5 pb-3 pt-3">
+              <div className="relative flex items-center justify-center">
+                <div className="h-1.5 w-12 rounded-full bg-gray-200" />
+                <button
+                  type="button"
+                  onClick={() => setIsNearbyListOpen(false)}
+                  className="absolute right-0 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+                  aria-label="Close nearby stations"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            <NearbyStationsList
+              stations={stations}
+              fuelType={fuelType}
+              priceBenchmark={priceBenchmark}
+              listOrigin={nearbyListOrigin}
+              originLabel={nearbyListOriginLabel}
+              loading={loadingStations}
+              selectedStationId={activeStationId}
+              onStationSelect={(stationId) => {
+                setIsNearbyListOpen(false);
+                void handleStationSelect(stationId);
+              }}
+              variant="sheet"
+              className="min-h-0 flex-1"
+            />
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
+
+      {showMobileBestNearbyNotice && activeBestNearby && (
         <div
           ref={mobileBestNearbyRef}
           style={mobileBestNearbyStyle}
@@ -1618,7 +1649,7 @@ export default function ClientMap({
         </div>
       )}
 
-      {showMobilePriceGuide && (
+      {showMobilePriceGuideCard && (
         <div
           ref={mobilePriceGuideRef}
           style={mobilePriceGuideStyle}
@@ -1662,102 +1693,105 @@ export default function ClientMap({
       )}
 
       {/* Mobile Bottom Controls */}
-      <div
-        ref={mobileBottomControlsRef}
-        className="pointer-events-none absolute bottom-6 left-3 right-3 z-20 flex gap-3 sm:hidden"
-      >
-        <div className="pointer-events-auto flex flex-1 items-center gap-1 rounded-2xl border border-gray-100 bg-white/80 p-1.5 shadow-lg backdrop-blur-md">
-          <button
-            onClick={() => setFuelType('unleaded')}
-            className={`flex-1 rounded-xl border px-2.5 py-2 text-[13px] font-medium transition-colors ${
-              fuelType === 'unleaded'
-                ? 'border-blue-200 bg-blue-50 text-blue-700'
-                : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-            }`}
-          >
-            Unleaded
-          </button>
-          <button
-            onClick={() => setFuelType('diesel')}
-            className={`flex-1 rounded-xl border px-2.5 py-2 text-[13px] font-medium transition-colors ${
-              fuelType === 'diesel'
-                ? 'border-blue-200 bg-blue-50 text-blue-700'
-                : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
-            }`}
-          >
-            Diesel
-          </button>
-        </div>
+      {showMobileBottomControls && (
+        <div
+          ref={mobileBottomControlsRef}
+          className="pointer-events-none absolute bottom-6 left-3 right-3 z-20 flex gap-3 sm:hidden"
+        >
+          <div className="pointer-events-auto flex flex-1 items-center gap-1 rounded-2xl border border-gray-100 bg-white/80 p-1.5 shadow-lg backdrop-blur-md">
+            <button
+              onClick={() => setFuelType('unleaded')}
+              className={`flex-1 rounded-xl border px-2.5 py-2 text-[13px] font-medium transition-colors ${
+                fuelType === 'unleaded'
+                  ? 'border-blue-200 bg-blue-50 text-blue-700'
+                  : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+              }`}
+            >
+              Unleaded
+            </button>
+            <button
+              onClick={() => setFuelType('diesel')}
+              className={`flex-1 rounded-xl border px-2.5 py-2 text-[13px] font-medium transition-colors ${
+                fuelType === 'diesel'
+                  ? 'border-blue-200 bg-blue-50 text-blue-700'
+                  : 'border-transparent text-gray-500 hover:bg-gray-50 hover:text-gray-700'
+              }`}
+            >
+              Diesel
+            </button>
+          </div>
 
-        {showMobileBestNearbyButton && (
+          {showMobileBestNearbyButton && (
+            <button
+              type="button"
+              onClick={handleToggleBestNearby}
+              className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
+                bestNearbyNeedsAttention
+                  ? 'border-blue-200 bg-blue-50 text-blue-700'
+                  : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+              }`}
+              title={showMobileBestNearbyCard ? 'Hide best nearby' : 'Show best nearby'}
+              aria-pressed={showMobileBestNearbyCard}
+              aria-expanded={showMobileBestNearbyCard}
+              aria-label={showMobileBestNearbyCard ? 'Hide best nearby' : 'Show best nearby'}
+            >
+              <Fuel className="h-5 w-5" />
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={handleToggleBestNearby}
+            onClick={() => setIsMobilePriceGuideVisible((prev) => !prev)}
             className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
-              bestNearbyNeedsAttention
+              isMobilePriceGuideVisible
                 ? 'border-blue-200 bg-blue-50 text-blue-700'
                 : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
             }`}
-            title={showMobileBestNearbyCard ? 'Hide best nearby' : 'Show best nearby'}
-            aria-pressed={showMobileBestNearbyCard}
-            aria-expanded={showMobileBestNearbyCard}
-            aria-label={showMobileBestNearbyCard ? 'Hide best nearby' : 'Show best nearby'}
+            title={isMobilePriceGuideVisible ? 'Hide price guide' : 'Show price guide'}
+            aria-pressed={isMobilePriceGuideVisible}
+            aria-label={isMobilePriceGuideVisible ? 'Hide price guide' : 'Show price guide'}
           >
-            <Fuel className="h-5 w-5" />
+            <Info className="h-5 w-5" />
           </button>
-        )}
 
-        <button
-          type="button"
-          onClick={() => setIsMobilePriceGuideVisible((prev) => !prev)}
-          className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors ${
-            isMobilePriceGuideVisible
-              ? 'border-blue-200 bg-blue-50 text-blue-700'
-              : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
-          }`}
-          title={isMobilePriceGuideVisible ? 'Hide price guide' : 'Show price guide'}
-          aria-pressed={isMobilePriceGuideVisible}
-          aria-label={isMobilePriceGuideVisible ? 'Hide price guide' : 'Show price guide'}
-        >
-          <Info className="h-5 w-5" />
-        </button>
+          <button
+            type="button"
+            onClick={() => setIsNearbyListOpen((prev) => !prev)}
+            disabled={!viewportCenter}
+            className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+              isNearbyListOpen
+                ? 'border-blue-200 bg-blue-50 text-blue-700'
+                : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+            }`}
+            title={
+              viewportCenter
+                ? isNearbyListOpen
+                  ? 'Hide nearby stations'
+                  : 'Show nearby stations'
+                : 'Move the map to load nearby stations'
+            }
+            aria-pressed={isNearbyListOpen}
+            aria-expanded={isNearbyListOpen}
+            aria-label={isNearbyListOpen ? 'Hide nearby stations' : 'Show nearby stations'}
+          >
+            <List className="h-5 w-5" />
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setIsNearbyListOpen((prev) => !prev)}
-          disabled={!viewportCenter}
-          className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
-            isNearbyListOpen
-              ? 'border-blue-200 bg-blue-50 text-blue-700'
-              : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
-          }`}
-          title={
-            viewportCenter
-              ? isNearbyListOpen
-                ? 'Hide nearby stations'
-                : 'Show nearby stations'
-              : 'Move the map to load nearby stations'
-          }
-          aria-pressed={isNearbyListOpen}
-          aria-label={isNearbyListOpen ? 'Hide nearby stations' : 'Show nearby stations'}
-        >
-          <List className="h-5 w-5" />
-        </button>
-
-        <button
-          type="button"
-          onClick={handleLocateUser}
-          disabled={isLocating}
-          className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-            isFocusedOnUserLocation || isLocating
-              ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
-              : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
-          }`}
-          title="Use my location"
-        >
-          <LocateFixed className={`h-5 w-5 ${isLocating ? 'animate-pulse' : ''}`} />
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={handleLocateUser}
+            disabled={isLocating}
+            className={`pointer-events-auto flex min-h-12 min-w-12 shrink-0 items-center justify-center rounded-2xl border px-4 shadow-lg backdrop-blur-md transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+              isFocusedOnUserLocation || isLocating
+                ? 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                : 'border-gray-100 bg-white/80 text-gray-700 hover:bg-white/90'
+            }`}
+            title="Use my location"
+          >
+            <LocateFixed className={`h-5 w-5 ${isLocating ? 'animate-pulse' : ''}`} />
+          </button>
+        </div>
+      )}
 
       {viewportCenter && (
         <div
