@@ -17,6 +17,8 @@ import {
   getPriceTextClassName,
   getPriceTone,
 } from '@/lib/price-colors';
+import { hasBrandLogo } from '@/lib/brand-logos';
+import BrandLogo from './BrandLogo';
 
 const PRICE_HISTORY_WINDOW_DAYS = 30;
 
@@ -256,6 +258,7 @@ export default function StationDrawer({
   const priceTone = getPriceTone(latestPrice, priceScale);
   const freshnessTimestamp = latestTimelineEntry?.timestamp ?? null;
   const freshnessTone = freshnessTimestamp ? getFreshnessTone(freshnessTimestamp) : null;
+  const stationHasLogo = hasBrandLogo(station.brand);
   const freshnessLabel = freshnessTimestamp
     ? `${formatDistanceToNow(freshnessTimestamp, { addSuffix: true })}`
     : null;
@@ -302,9 +305,16 @@ export default function StationDrawer({
             <div className="max-w-md mx-auto">
               <div className="mb-4">
                 <div className="flex items-start justify-between gap-3">
-                  <h2 className="min-w-0 text-2xl font-bold tracking-tight text-gray-900">
-                    {station.brand || 'Unknown Brand'}
-                  </h2>
+                  <div className="min-w-0 flex items-start gap-3">
+                    <BrandLogo brand={station.brand} size="drawer" align="left" className="mt-0.5" />
+                    {stationHasLogo ? (
+                      <h2 className="sr-only">{station.brand || 'Unknown Brand'}</h2>
+                    ) : (
+                      <h2 className="min-w-0 pt-1 text-2xl font-bold tracking-tight text-gray-900">
+                        {station.brand || 'Unknown Brand'}
+                      </h2>
+                    )}
+                  </div>
                   <div className="flex shrink-0 items-center gap-2">
                     {distanceMiles !== null && (
                       <div className="inline-flex items-center gap-1 rounded-full bg-gray-100 px-3 py-1.5 text-xs font-medium text-gray-600">

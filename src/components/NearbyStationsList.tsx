@@ -6,12 +6,14 @@ import { ChevronRight, ListOrdered } from 'lucide-react';
 import { useMemo, useState, type Ref } from 'react';
 
 import type { PriceBenchmark, StationMapRecord } from '@/app/actions/stations';
+import { hasBrandLogo } from '@/lib/brand-logos';
 import {
   getPriceScale,
   getPriceSurfaceClassName,
   getPriceTextClassName,
   getPriceTone,
 } from '@/lib/price-colors';
+import BrandLogo from './BrandLogo';
 
 const FIXED_REFUEL_VOLUME_LITRES = 50;
 const gbpFormatter = new Intl.NumberFormat('en-GB', {
@@ -416,6 +418,7 @@ export default function NearbyStationsList({
               const priceTone = getPriceTone(item.price, priceScale);
               const priceTextClassName = getPriceTextClassName(priceTone);
               const priceSurfaceClassName = getPriceSurfaceClassName(priceTone);
+              const stationHasLogo = hasBrandLogo(item.station.brand);
               const isSelected = selectedStationId === item.station.id;
               const isBestValue = item.station.id === bestValueStationId;
               const showStaleBadge = item.freshnessLabel === 'Stale';
@@ -448,8 +451,15 @@ export default function NearbyStationsList({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="truncate text-[15px] font-semibold text-gray-950">
-                            {item.station.brand || 'Unknown Brand'}
+                          <div className="min-w-0 flex items-center gap-2">
+                            <BrandLogo brand={item.station.brand} size="list" />
+                            {stationHasLogo ? (
+                              <span className="sr-only">{item.station.brand || 'Unknown Brand'}</span>
+                            ) : (
+                              <div className="min-w-0 truncate text-[15px] font-semibold text-gray-950">
+                                {item.station.brand || 'Unknown Brand'}
+                              </div>
+                            )}
                           </div>
                           <div className="mt-2 flex flex-wrap items-center gap-2">
                             {isBestValue && (

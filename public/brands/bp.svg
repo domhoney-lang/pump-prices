@@ -1,0 +1,8 @@
+<svg width="96" height="96" viewBox="0 0 96 96" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="96" height="96" rx="24" fill="#F8FAFC"/>
+  <g transform="translate(48 38)">
+    <path d="M0 -24L6 -11L20 -18L13 -5L27 0L13 5L20 18L6 11L0 24L-6 11L-20 18L-13 5L-27 0L-13 -5L-20 -18L-6 -11Z" fill="#84CC16"/>
+    <path d="M0 -16L4 -7L13 -12L8 -3L17 0L8 3L13 12L4 7L0 16L-4 7L-13 12L-8 3L-17 0L-8 -3L-13 -12L-4 -7Z" fill="#FACC15"/>
+  </g>
+  <text x="48" y="76" text-anchor="middle" font-family="Arial, sans-serif" font-size="22" font-weight="700" fill="#15803D">bp</text>
+</svg>

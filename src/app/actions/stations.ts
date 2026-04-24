@@ -498,6 +498,12 @@ function getNationalHistoryWindowStart() {
   return historyWindowStart;
 }
 
+function addUtcDays(date: Date, days: number) {
+  const nextDate = new Date(date);
+  nextDate.setUTCDate(nextDate.getUTCDate() + days);
+  return nextDate;
+}
+
 function getUtcDayKey(date: Date) {
   return date.toISOString().slice(0, 10);
 }
@@ -505,13 +511,14 @@ function getUtcDayKey(date: Date) {
 async function buildNationalBenchmarkHistory(): Promise<
   Record<FuelType, FuelBenchmarkHistoryPoint[]>
 > {
+  const historyWindowStart = getNationalHistoryWindowStart();
   const historyRows = await prisma.priceHistory.findMany({
     where: {
       fuelType: {
         in: [...FUEL_TYPES],
       },
       timestamp: {
-        gte: getNationalHistoryWindowStart(),
+        gte: historyWindowStart,
       },
     },
     select: {
@@ -529,10 +536,48 @@ async function buildNationalBenchmarkHistory(): Promise<
       },
     ],
   });
+  const seedRows = await prisma.$queryRaw<
+    Array<{
+      stationId: string;
+      fuelType: string;
+      price: number;
+      timestamp: Date;
+    }>
+  >(Prisma.sql`
+    SELECT DISTINCT ON ("stationId", "fuelType")
+      "stationId",
+      "fuelType",
+      "price",
+      "timestamp"
+    FROM "PriceHistory"
+    WHERE "fuelType" IN (${Prisma.join([...FUEL_TYPES])})
+      AND "timestamp" < ${historyWindowStart}
+    ORDER BY "stationId" ASC, "fuelType" ASC, "timestamp" DESC
+  `);
   const historyByFuel = {
     unleaded: new Map<string, Map<string, number>>(),
     diesel: new Map<string, Map<string, number>>(),
   } satisfies Record<FuelType, Map<string, Map<string, number>>>;
+  const startingPricesByFuel = {
+    unleaded: new Map<string, number>(),
+    diesel: new Map<string, number>(),
+  } satisfies Record<FuelType, Map<string, number>>;
+
+  for (const row of seedRows) {
+    const fuelType = row.fuelType.toLowerCase();
+
+    if (!isFuelType(fuelType)) {
+      continue;
+    }
+
+    const normalizedPrice = normalizeFuelPriceValue(row.price);
+
+    if (!normalizedPrice) {
+      continue;
+    }
+
+    startingPricesByFuel[fuelType].set(row.stationId, normalizedPrice.normalizedPrice);
+  }
 
   for (const row of historyRows) {
     const fuelType = row.fuelType.toLowerCase();
@@ -558,23 +603,41 @@ async function buildNationalBenchmarkHistory(): Promise<
     historyByFuel[fuelType].set(dayKey, new Map([[row.stationId, normalizedPrice.normalizedPrice]]));
   }
 
-  const toHistorySeries = (historyForFuel: Map<string, Map<string, number>>) =>
-    Array.from(historyForFuel.entries())
-      .sort(([leftDate], [rightDate]) => leftDate.localeCompare(rightDate))
-      .map(([date, stationPrices]) => {
-        const prices = Array.from(stationPrices.values());
-        const totalPrice = prices.reduce((sum, price) => sum + price, 0);
+  const toHistorySeries = (fuelType: FuelType, historyForFuel: Map<string, Map<string, number>>) => {
+    const series: FuelBenchmarkHistoryPoint[] = [];
+    const activeStationPrices = new Map(startingPricesByFuel[fuelType]);
 
-        return {
-          date,
-          averagePrice: totalPrice / prices.length,
-          stationCount: stationPrices.size,
-        } satisfies FuelBenchmarkHistoryPoint;
+    for (let dayOffset = 0; dayOffset < NATIONAL_PRICE_HISTORY_WINDOW_DAYS; dayOffset += 1) {
+      const currentDate = addUtcDays(historyWindowStart, dayOffset);
+      const dayKey = getUtcDayKey(currentDate);
+      const dailyUpdates = historyForFuel.get(dayKey);
+
+      if (dailyUpdates) {
+        for (const [stationId, price] of dailyUpdates) {
+          activeStationPrices.set(stationId, price);
+        }
+      }
+
+      if (activeStationPrices.size === 0) {
+        continue;
+      }
+
+      const prices = Array.from(activeStationPrices.values());
+      const totalPrice = prices.reduce((sum, price) => sum + price, 0);
+
+      series.push({
+        date: dayKey,
+        averagePrice: totalPrice / prices.length,
+        stationCount: activeStationPrices.size,
       });
+    }
+
+    return series;
+  };
 
   return {
-    unleaded: toHistorySeries(historyByFuel.unleaded),
-    diesel: toHistorySeries(historyByFuel.diesel),
+    unleaded: toHistorySeries('unleaded', historyByFuel.unleaded),
+    diesel: toHistorySeries('diesel', historyByFuel.diesel),
   };
 }
 
