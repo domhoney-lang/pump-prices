@@ -240,14 +240,21 @@ function PriceGuideSparkline({
   const historyPrices = history.map((point) => point.averagePrice);
   const historyMinPrice = historyPrices.length > 0 ? Math.min(...historyPrices) : null;
   const historyMaxPrice = historyPrices.length > 0 ? Math.max(...historyPrices) : null;
-  const historySpread =
+  const rawHistorySpread =
     historyMinPrice !== null && historyMaxPrice !== null
-      ? Math.max(historyMaxPrice - historyMinPrice, 0.6)
+      ? historyMaxPrice - historyMinPrice
       : null;
-  const domainPadding = historySpread !== null ? Math.max(historySpread * 0.2, 0.15) : null;
+  const minimumVisualSpread = 0.12;
+  const visualSpreadFloor =
+    rawHistorySpread !== null ? Math.max((minimumVisualSpread - rawHistorySpread) / 2, 0) : null;
+  const domainPadding =
+    rawHistorySpread !== null ? Math.max(rawHistorySpread * 0.04, 0.015) : null;
   const yDomain =
     historyMinPrice !== null && historyMaxPrice !== null && domainPadding !== null
-      ? [historyMinPrice - domainPadding, historyMaxPrice + domainPadding]
+      ? [
+          historyMinPrice - domainPadding - (visualSpreadFloor ?? 0),
+          historyMaxPrice + domainPadding + (visualSpreadFloor ?? 0),
+        ]
       : ['auto', 'auto'];
   const trendDelta =
     latestPoint && firstPoint ? latestPoint.averagePrice - firstPoint.averagePrice : null;
@@ -298,14 +305,14 @@ function PriceGuideSparkline({
                 </defs>
                 <YAxis hide domain={yDomain} />
                 <Area
-                  type="monotone"
+                  type="linear"
                   dataKey="averagePrice"
                   stroke="none"
                   fill={`url(#price-guide-gradient-${fuelType})`}
                   isAnimationActive={false}
                 />
                 <Line
-                  type="monotone"
+                  type="linear"
                   dataKey="averagePrice"
                   stroke={lineStroke}
                   strokeWidth={2.75}

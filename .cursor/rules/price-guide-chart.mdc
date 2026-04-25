@@ -14,6 +14,7 @@ When editing the map and price-guide UI, keep the price-guide chart card visuall
 - The UK average series must be a carried-forward daily market average: each day should reflect the latest known price for all stations as of that day, not just the subset of stations that changed on that day.
 - The benchmark history window should end at the freshest benchmark timestamp across the live snapshot and history data (`CurrentPrice` or `PriceHistory`), not blindly at today's date and not just at the last changed-price row.
 - Do not mount the Recharts sparkline inside a hidden breakpoint variant. Only render the price-guide chart in the active mobile or desktop card, otherwise Recharts can measure a `0x0` container and regress.
+- Keep subtle daily movement visible in the sparkline: avoid oversized y-axis floors/padding that flatten real rises and dips, and do not over-smooth the line into a plateau when the underlying daily series has visible inflections.
 - Keep the chart presentation clean and data-first: crisp line, subtle area fill, readable labels, and no decorative marker badges inside the chart card.
 
 Example:
