@@ -238,41 +238,16 @@ function PriceGuideSparkline({
   const latestPoint = history.at(-1) ?? null;
   const firstPoint = history[0] ?? null;
   const historyPrices = history.map((point) => point.averagePrice);
-  const historyAveragePrice =
-    historyPrices.length > 0
-      ? historyPrices.reduce((sum, price) => sum + price, 0) / historyPrices.length
+  const historyMinPrice = historyPrices.length > 0 ? Math.min(...historyPrices) : null;
+  const historyMaxPrice = historyPrices.length > 0 ? Math.max(...historyPrices) : null;
+  const historySpread =
+    historyMinPrice !== null && historyMaxPrice !== null
+      ? Math.max(historyMaxPrice - historyMinPrice, 0.6)
       : null;
-  const rawHistorySpread =
-    historyPrices.length > 0
-      ? Math.max(...historyPrices) - Math.min(...historyPrices)
-      : null;
-  const visualAmplificationFactor =
-    rawHistorySpread === null
-      ? 1
-      : rawHistorySpread >= 5
-        ? 1.35
-        : rawHistorySpread >= 3
-          ? 1.55
-          : rawHistorySpread >= 1.5
-            ? 1.85
-            : 2.2;
-  const chartHistory = history.map((point) => ({
-    ...point,
-    chartAveragePrice:
-      historyAveragePrice === null
-        ? point.averagePrice
-        : historyAveragePrice + (point.averagePrice - historyAveragePrice) * visualAmplificationFactor,
-  }));
-  const chartPrices = chartHistory.map((point) => point.chartAveragePrice);
-  const chartMinPrice = chartPrices.length > 0 ? Math.min(...chartPrices) : null;
-  const chartMaxPrice = chartPrices.length > 0 ? Math.max(...chartPrices) : null;
-  const chartSpread =
-    chartMinPrice !== null && chartMaxPrice !== null ? chartMaxPrice - chartMinPrice : null;
-  const domainPadding =
-    chartSpread !== null ? Math.max(chartSpread * 0.025, 0.008) : null;
+  const domainPadding = historySpread !== null ? Math.max(historySpread * 0.2, 0.15) : null;
   const yDomain =
-    chartMinPrice !== null && chartMaxPrice !== null && domainPadding !== null
-      ? [chartMinPrice - domainPadding, chartMaxPrice + domainPadding]
+    historyMinPrice !== null && historyMaxPrice !== null && domainPadding !== null
+      ? [historyMinPrice - domainPadding, historyMaxPrice + domainPadding]
       : ['auto', 'auto'];
   const trendDelta =
     latestPoint && firstPoint ? latestPoint.averagePrice - firstPoint.averagePrice : null;
@@ -300,6 +275,7 @@ function PriceGuideSparkline({
           <p className="mt-1 text-xl font-semibold tracking-tight text-gray-900">
             {latestPoint ? `${latestPoint.averagePrice.toFixed(1)}p` : 'N/A'}
           </p>
+          <p className="mt-1 text-xs text-gray-500">30-day average</p>
         </div>
         {trendText ? (
           <div
@@ -312,9 +288,9 @@ function PriceGuideSparkline({
 
       {history.length > 0 ? (
         <>
-          <div className="mt-2 h-24 w-full" aria-label={`30-day UK ${fuelType} average price trend`}>
+          <div className="mt-3 h-20 w-full" aria-label={`30-day UK ${fuelType} average price trend`}>
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartHistory} margin={{ top: 8, right: 4, bottom: 8, left: 4 }}>
+              <AreaChart data={history} margin={{ top: 8, right: 4, bottom: 8, left: 4 }}>
                 <defs>
                   <linearGradient id={`price-guide-gradient-${fuelType}`} x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor={lineStroke} stopOpacity={0.22} />
@@ -323,15 +299,15 @@ function PriceGuideSparkline({
                 </defs>
                 <YAxis hide domain={yDomain} />
                 <Area
-                  type="linear"
-                  dataKey="chartAveragePrice"
+                  type="monotone"
+                  dataKey="averagePrice"
                   stroke="none"
                   fill={`url(#price-guide-gradient-${fuelType})`}
                   isAnimationActive={false}
                 />
                 <Line
-                  type="linear"
-                  dataKey="chartAveragePrice"
+                  type="monotone"
+                  dataKey="averagePrice"
                   stroke={lineStroke}
                   strokeWidth={2.75}
                   dot={(props) =>
