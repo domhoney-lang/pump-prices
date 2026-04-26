@@ -27,7 +27,6 @@ interface MapProps {
   mapFocusLocation: { lat: number; lng: number; zoom?: number } | null;
   userLocation: { lat: number; lng: number } | null;
   selectedStationId: string | null;
-  bestStationId: string | null;
   bestNearbyLocation: { lat: number; lng: number } | null;
   obstructionRects: Array<{
     left: number;
@@ -359,7 +358,6 @@ export default function Map({
   mapFocusLocation,
   userLocation,
   selectedStationId,
-  bestStationId,
   bestNearbyLocation,
   obstructionRects,
   onStationSelect,
@@ -401,7 +399,6 @@ export default function Map({
     price: number | undefined,
     isCheapest: boolean,
     isSelected: boolean,
-    isBestWithinRadius: boolean,
   ) => {
     const priceText = price ? `${price.toFixed(1)}p` : 'N/A';
     const width = Math.max(48, priceText.length * 10 + 20);
@@ -423,7 +420,6 @@ export default function Map({
       className: 'custom-marker',
       html: `<div class="relative group cursor-pointer drop-shadow-md">
                ${isCheapest ? `<div class="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-emerald-500 text-white text-[9px] font-black px-1.5 py-0.5 rounded shadow-sm z-10 tracking-widest whitespace-nowrap border border-emerald-600">BEST</div>` : ''}
-               ${isBestWithinRadius ? '<div class="absolute -inset-2 rounded-full border-2 border-sky-400/70"></div>' : ''}
                <div class="absolute -inset-1 ${colors.ring} rounded-full blur-sm transition-all ${selectionClasses.ring}"></div>
                <div class="relative ${colors.bg} text-white font-bold px-2.5 py-1 rounded-full text-sm whitespace-nowrap border-2 border-white ${colors.hoverBg} ${selectionClasses.pill} transition-all flex items-center justify-center">
                  ${priceText}
@@ -444,10 +440,9 @@ export default function Map({
         latestPrice,
         latestPrice !== undefined && latestPrice === priceScale.absoluteCheapestPrice,
         station.id === selectedStationId,
-        station.id === bestStationId,
       ),
     }));
-  }, [bestStationId, createCustomIcon, priceScale.absoluteCheapestPrice, selectedStationId, stationPrices]);
+  }, [createCustomIcon, priceScale.absoluteCheapestPrice, selectedStationId, stationPrices]);
 
   const clusteredMarkers = useMemo<StationClusterEntry[]>(() => {
     if (!shouldClusterMarkers) {

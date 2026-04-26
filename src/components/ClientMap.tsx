@@ -1703,7 +1703,6 @@ export default function ClientMap({
         mapFocusLocation={mapFocusLocation}
         userLocation={userLocation}
         selectedStationId={activeStationId}
-        bestStationId={activeBestNearby?.stationId ?? null}
         bestNearbyLocation={
           activeBestNearby
             ? {
