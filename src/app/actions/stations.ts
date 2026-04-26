@@ -757,7 +757,7 @@ const getCachedNationalBenchmark = unstable_cache(
   [NATIONAL_PRICE_BENCHMARK_TAG],
   {
     tags: [NATIONAL_PRICE_BENCHMARK_TAG],
-    revalidate: 60 * 60 * 24 * 7,
+    revalidate: 60 * 30,
   },
 );
 
