@@ -10,6 +10,7 @@
     "postinstall": "prisma generate",
     "start": "next start",
     "lint": "eslint",
+    "db:apply-supabase-privileges": "prisma db execute --schema prisma/schema.prisma --file prisma/supabase-data-api-privileges.sql",
     "sync:fuel-data": "tsx scripts/sync-fuel-data.ts",
     "repair:price-units": "tsx scripts/repair-price-units.ts"
   },

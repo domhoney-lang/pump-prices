@@ -15,7 +15,7 @@ Before running any Prisma or sync command locally, confirm both `.env` and `.env
 - Next.js runtime reads `.env.local`.
 - `.env.example` is a useful template, but its database entries are hosted-shaped placeholders. Do not blindly copy those URLs into local review env files.
 
-Keep `npx prisma db push`, `npm run sync:fuel-data`, and `npm run sync:fuel-data -- --mode=full-price-backfill` pointed at a local database unless you are intentionally running them in a hosted environment.
+Keep `npx prisma db push`, `npm run db:apply-supabase-privileges`, `npm run sync:fuel-data`, and `npm run sync:fuel-data -- --mode=full-price-backfill` pointed at a local database unless you are intentionally running them in a hosted environment.
 
 ### Quick Start
 
@@ -72,9 +72,12 @@ Do not continue until both files point only to `localhost` or `127.0.0.1`.
 
 ```bash
 npx prisma db push
+npm run db:apply-supabase-privileges
 ```
 
-If Prisma complains about prepared statements on a fresh local Prisma dev server, temporarily set `.env`'s `DATABASE_URL` to the raw `postgresql://...` TCP URL from `npx prisma dev ls`, run `npx prisma db push`, then switch `.env` back to the `prisma+postgres://...` URL before starting the app.
+`prisma db push` creates or updates the Postgres schema. `npm run db:apply-supabase-privileges` then applies the explicit Supabase Data API privilege posture for those Postgres tables.
+
+If Prisma complains about prepared statements on a fresh local Prisma dev server, temporarily set `.env`'s `DATABASE_URL` to the raw `postgresql://...` TCP URL from `npx prisma dev ls`, run `npx prisma db push` and `npm run db:apply-supabase-privileges`, then switch `.env` back to the `prisma+postgres://...` URL before starting the app.
 
 7. If you want real data in the local map, run a one-time local backfill:
 
@@ -163,24 +166,30 @@ npm run dev:local
 
 2. If the change affects Prisma schema, sync, or pricing logic, test it against the local Prisma dev database before touching any hosted environment.
 
-3. Never commit `.env`, `.env.local`, or other secrets. Production configuration belongs in hosted secret stores, not in git.
+3. If the change creates or renames Postgres tables in `public`, update `prisma/supabase-data-api-privileges.sql` in the same change and run:
 
-4. If the change introduces or renames environment variables, update the relevant production configuration:
+```bash
+npm run db:apply-supabase-privileges
+```
+
+4. Never commit `.env`, `.env.local`, or other secrets. Production configuration belongs in hosted secret stores, not in git.
+
+5. If the change introduces or renames environment variables, update the relevant production configuration:
 
 - Vercel project env vars for the Next.js app
 - GitHub Actions repository secrets for scheduled sync jobs
 - AWS / GitHub secrets and variables for the Lambda worker
 
-5. Before any production sync or repair command, confirm hosted `DATABASE_URL` and `DIRECT_URL` point at the intended production database, not your local Prisma dev instance.
+6. Before any production sync or repair command, confirm hosted `DATABASE_URL` and `DIRECT_URL` point at the intended production database, not your local Prisma dev instance.
 
-6. If the change affects scheduled syncs or cache revalidation, verify these production paths still have the secrets they need:
+7. If the change affects scheduled syncs or cache revalidation, verify these production paths still have the secrets they need:
 
 - `/api/sync`
 - `/api/internal/revalidate-national-benchmark`
 - GitHub Actions scheduler
 - Lambda worker deployment
 
-7. Commit and push only application code, config, and docs. Hosted deployments should pick up secrets from Vercel, GitHub Actions, and AWS, not from files in this repo.
+8. Commit and push only application code, config, and docs. Hosted deployments should pick up secrets from Vercel, GitHub Actions, and AWS, not from files in this repo.
 
 ## Environment
 
@@ -200,6 +209,20 @@ Optional only if you wire Supabase features back into the app:
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_DEFAULT_KEY` or `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
+
+## Supabase Data API Privileges
+
+This app uses Postgres through Prisma and `DATABASE_URL`; it does not read or write the app tables through Supabase REST, GraphQL, or `supabase-js` table calls.
+
+The Prisma-managed public tables are therefore kept private from Supabase Data API roles (`anon`, `authenticated`, and `service_role`). The SQL in `prisma/supabase-data-api-privileges.sql` revokes those roles from `Station`, `PriceHistory`, and `CurrentPrice` when they exist, and also revokes Supabase's default future-table and future-sequence privileges for the `postgres` owner role.
+
+Run the privilege step after any `npx prisma db push` that creates or changes public tables:
+
+```bash
+npm run db:apply-supabase-privileges
+```
+
+If a future feature deliberately uses Supabase Data API for one of these tables, add narrow `GRANT` statements for only the required roles and operations in the same migration or privilege SQL change.
 
 ## Syncing Fuel Data
 

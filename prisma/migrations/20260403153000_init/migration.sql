@@ -40,3 +40,32 @@ CREATE UNIQUE INDEX "PriceHistory_stationId_fuelType_timestamp_key" ON "PriceHis
 
 -- AddForeignKey
 ALTER TABLE "PriceHistory" ADD CONSTRAINT "PriceHistory_stationId_fkey" FOREIGN KEY ("stationId") REFERENCES "Station"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- Supabase Data API privileges
+-- This app uses direct Postgres access through Prisma, so these tables are not
+-- intentionally exposed through Supabase REST or GraphQL roles.
+DO $$
+DECLARE
+    data_api_role TEXT;
+BEGIN
+    FOREACH data_api_role IN ARRAY ARRAY['anon', 'authenticated', 'service_role']
+    LOOP
+        IF to_regrole(data_api_role) IS NOT NULL THEN
+            IF to_regrole('postgres') IS NOT NULL THEN
+                EXECUTE format(
+                    'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM %I',
+                    'postgres',
+                    data_api_role
+                );
+                EXECUTE format(
+                    'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA public REVOKE USAGE, SELECT ON SEQUENCES FROM %I',
+                    'postgres',
+                    data_api_role
+                );
+            END IF;
+
+            EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public."Station" FROM %I', data_api_role);
+            EXECUTE format('REVOKE ALL PRIVILEGES ON TABLE public."PriceHistory" FROM %I', data_api_role);
+        END IF;
+    END LOOP;
+END $$;
