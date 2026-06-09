@@ -339,6 +339,10 @@ export default function NearbyStationsList({
           : 'pointer-events-auto rounded-[28px] border border-gray-100 bg-white/92 p-4 shadow-xl backdrop-blur-md'
       } ${className ?? ''}`}
       aria-label="Nearby stations"
+      onWheel={(e) => e.stopPropagation()}
+      onClick={(e) => e.stopPropagation()}
+      onMouseDown={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
     >
       <div
         className={

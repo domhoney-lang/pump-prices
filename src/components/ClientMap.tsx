@@ -1046,9 +1046,18 @@ export default function ClientMap({
 
   const handleDesktopNearbyStationSelect = useCallback(
     (stationId: string) => {
+      const station = stations.find((s) => s.id === stationId);
+      if (station) {
+        setMapFocusLocation({
+          lat: station.lat,
+          lng: station.lng,
+          zoom: 14,
+        });
+        setMapFocusLabel(station.brand || 'Selected station');
+      }
       void handleStationSelect(stationId, 'nearby-list');
     },
-    [handleStationSelect],
+    [handleStationSelect, stations],
   );
 
   const handleMobileNearbyStationSelect = useCallback(
@@ -1735,49 +1744,51 @@ export default function ClientMap({
         }`}
       />
 
-      <Drawer.Root open={Boolean(viewportCenter) && isNearbyListOpen} onOpenChange={setIsNearbyListOpen}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 z-30 bg-slate-950/18 backdrop-blur-[1px] sm:hidden" />
-          <Drawer.Content
-            ref={mobileNearbySheetRef}
-            className="fixed inset-x-0 bottom-0 z-40 flex h-[60dvh] max-h-[78dvh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl outline-none sm:hidden"
-          >
-            <Drawer.Title className="sr-only">Nearby stations</Drawer.Title>
-            <Drawer.Description className="sr-only">
-              Browse nearby stations and sort them by cheapest or nearest.
-            </Drawer.Description>
-            <div className="relative border-b border-gray-100 px-5 pb-2.5 pt-2.5">
-              <div className="flex items-center justify-center">
-                <div className="h-1.5 w-12 rounded-full bg-gray-200" />
+      {!isDesktopViewport && (
+        <Drawer.Root open={Boolean(viewportCenter) && isNearbyListOpen} onOpenChange={setIsNearbyListOpen}>
+          <Drawer.Portal>
+            <Drawer.Overlay className="fixed inset-0 z-30 bg-slate-950/18 backdrop-blur-[1px] sm:hidden" />
+            <Drawer.Content
+              ref={mobileNearbySheetRef}
+              className="fixed inset-x-0 bottom-0 z-40 flex h-[60dvh] max-h-[78dvh] flex-col overflow-hidden rounded-t-[28px] bg-white shadow-2xl outline-none sm:hidden"
+            >
+              <Drawer.Title className="sr-only">Nearby stations</Drawer.Title>
+              <Drawer.Description className="sr-only">
+                Browse nearby stations and sort them by cheapest or nearest.
+              </Drawer.Description>
+              <div className="relative border-b border-gray-100 px-5 pb-2.5 pt-2.5">
+                <div className="flex items-center justify-center">
+                  <div className="h-1.5 w-12 rounded-full bg-gray-200" />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsNearbyListOpen(false)}
+                  className="absolute right-3 top-2.5 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+                  aria-label="Close nearby stations"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsNearbyListOpen(false)}
-                className="absolute right-3 top-2.5 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
-                aria-label="Close nearby stations"
-              >
-                <X className="h-4 w-4" />
-              </button>
-            </div>
 
-            <NearbyStationsList
-              alertBaselines={alertBaselines}
-              bestStationId={activeBestNearby?.stationId ?? null}
-              stations={stations}
-              fuelType={fuelType}
-              nearbyRadiusMiles={nearbyRadiusMiles}
-              priceBenchmark={priceBenchmark}
-              listOrigin={nearbyListOrigin}
-              originLabel={nearbyListOriginLabel}
-              loading={loadingStations}
-              selectedStationId={activeStationId}
-              onStationSelect={handleMobileNearbyStationSelect}
-              variant="sheet"
-              className="min-h-0 flex-1"
-            />
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+              <NearbyStationsList
+                alertBaselines={alertBaselines}
+                bestStationId={activeBestNearby?.stationId ?? null}
+                stations={stations}
+                fuelType={fuelType}
+                nearbyRadiusMiles={nearbyRadiusMiles}
+                priceBenchmark={priceBenchmark}
+                listOrigin={nearbyListOrigin}
+                originLabel={nearbyListOriginLabel}
+                loading={loadingStations}
+                selectedStationId={activeStationId}
+                onStationSelect={handleMobileNearbyStationSelect}
+                variant="sheet"
+                className="min-h-0 flex-1"
+              />
+            </Drawer.Content>
+          </Drawer.Portal>
+        </Drawer.Root>
+      )}
 
       {showMobileBestNearbyNotice && activeBestNearby && (
         <div

@@ -306,17 +306,20 @@ function BestNearbyVisibilitySync({
 
 const StationMarkers = memo(function StationMarkers({
   markers,
+  selectedStationId,
   onStationSelect,
 }: {
   markers: StationMarkerEntry[];
+  selectedStationId: string | null;
   onStationSelect: (stationId: string) => void;
 }) {
   return (
     <>
       {markers.map(({ station, icon }) => {
+        const isSelected = station.id === selectedStationId;
         return (
           <Marker
-            key={station.id}
+            key={`${station.id}-${isSelected ? 'selected' : 'normal'}`}
             position={[station.lat, station.lng]}
             icon={icon}
             eventHandlers={{
@@ -569,7 +572,11 @@ export default function Map({
         {shouldClusterMarkers ? (
           <StationClusters clusters={clusteredMarkers} />
         ) : (
-          <StationMarkers markers={stationMarkers} onStationSelect={onStationSelect} />
+          <StationMarkers
+            markers={stationMarkers}
+            selectedStationId={selectedStationId}
+            onStationSelect={onStationSelect}
+          />
         )}
       </MapContainer>
     </div>
