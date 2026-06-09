@@ -47,6 +47,7 @@ interface StationDrawerProps {
   priceBenchmark: PriceBenchmark | null;
   nationalPriceBenchmark: NationalPriceBenchmark | null;
   focusLocation: FocusLocation | null;
+  isDesktop?: boolean;
 }
 
 type PriceInsight = {
@@ -156,6 +157,7 @@ export default function StationDrawer({
   priceBenchmark,
   nationalPriceBenchmark,
   focusLocation,
+  isDesktop = false,
 }: StationDrawerProps) {
   if (!station) return null;
 
@@ -279,10 +281,17 @@ export default function StationDrawer({
           onClose();
         }
       }}
+      direction={isDesktop ? 'right' : 'bottom'}
     >
       <Drawer.Portal>
         <Drawer.Overlay className="fixed inset-0 bg-black/40 z-40" />
-        <Drawer.Content className="fixed bottom-0 left-0 right-0 z-50 flex max-h-[85dvh] flex-col overflow-hidden rounded-t-[10px] bg-white shadow-xl">
+        <Drawer.Content
+          className={`fixed z-50 flex flex-col bg-white shadow-xl outline-none transition-all
+            ${isDesktop
+              ? 'top-0 bottom-0 right-0 h-full w-full max-w-[460px] rounded-l-3xl border-l border-gray-100'
+              : 'bottom-0 left-0 right-0 max-h-[85dvh] rounded-t-[10px]'
+            }`}
+        >
           <Drawer.Title className="sr-only">
             {station.brand || 'Unknown Brand'} station details
           </Drawer.Title>
@@ -291,14 +300,21 @@ export default function StationDrawer({
             {station.postcode ? `, ${station.postcode}` : ''}. Showing {fuelType} pricing and the
             last {PRICE_HISTORY_WINDOW_DAYS} days of price history.
           </Drawer.Description>
-          <div className="min-h-0 flex-1 overflow-y-auto rounded-t-[10px] bg-white p-6 pb-[max(2.5rem,env(safe-area-inset-bottom))]">
-            <div className="relative mb-5 flex items-center justify-center">
-              <div className="h-1.5 w-12 flex-shrink-0 rounded-full bg-gray-200" />
+          <div
+            className={`min-h-0 flex-1 overflow-y-auto bg-white p-6
+              ${isDesktop
+                ? 'rounded-l-3xl pb-6'
+                : 'rounded-t-[10px] pb-[max(2.5rem,env(safe-area-inset-bottom))]'
+              }`}
+          >
+            <div className="relative mb-5 flex items-center justify-between sm:justify-between">
+              {isDesktop && <h3 className="text-lg font-bold text-gray-950">Station Details</h3>}
+              <div className="h-1.5 w-12 flex-shrink-0 rounded-full bg-gray-200 sm:hidden absolute left-1/2 -translate-x-1/2" />
               <button
                 type="button"
                 onClick={onClose}
                 aria-label="Close station details"
-                className="absolute right-0 inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700"
+                className="absolute right-0 sm:relative inline-flex h-9 w-9 items-center justify-center rounded-full border border-gray-200 text-gray-500 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-700 cursor-pointer"
               >
                 <X className="h-4 w-4" />
               </button>

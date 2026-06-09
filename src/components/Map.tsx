@@ -202,6 +202,31 @@ function FocusLocation({
   return null;
 }
 
+function MapZoomControls() {
+  const map = useMap();
+
+  return (
+    <div className="absolute top-6 right-6 z-[1000] hidden sm:flex flex-col gap-2">
+      <button
+        type="button"
+        onClick={() => map.zoomIn()}
+        className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-gray-700 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:text-gray-900 cursor-pointer"
+        aria-label="Zoom in"
+      >
+        <span className="text-xl font-semibold">+</span>
+      </button>
+      <button
+        type="button"
+        onClick={() => map.zoomOut()}
+        className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 bg-white/90 text-gray-700 shadow-md backdrop-blur-sm transition-colors hover:bg-white hover:text-gray-900 cursor-pointer"
+        aria-label="Zoom out"
+      >
+        <span className="text-xl font-semibold">−</span>
+      </button>
+    </div>
+  );
+}
+
 function rectsOverlap(
   left: { left: number; top: number; right: number; bottom: number },
   right: { left: number; top: number; right: number; bottom: number },
@@ -516,6 +541,7 @@ export default function Map({
         <ViewportSync onViewportChange={onViewportChange} />
         <ZoomSync onZoomChange={setMapZoom} />
         <FocusLocation mapFocusLocation={mapFocusLocation} />
+        <MapZoomControls />
         <BestNearbyVisibilitySync
           bestNearbyLocation={bestNearbyLocation}
           obstructionRects={obstructionRects}

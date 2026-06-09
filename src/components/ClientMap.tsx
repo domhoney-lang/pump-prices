@@ -1730,7 +1730,7 @@ export default function ClientMap({
         selectedStationId={activeStationId}
         onStationSelect={handleDesktopNearbyStationSelect}
         containerRef={desktopNearbyListRef}
-        className={`pointer-events-none absolute bottom-6 left-6 z-20 hidden w-full max-w-sm overflow-hidden transition-all duration-200 sm:block ${
+        className={`pointer-events-none absolute bottom-6 left-6 z-20 hidden w-full max-w-sm overflow-hidden transition-all duration-200 sm:block sm:bottom-[88px] ${
           isNearbyListOpen ? 'sm:pointer-events-auto sm:opacity-100' : 'sm:translate-y-2 sm:opacity-0'
         }`}
       />
@@ -2137,6 +2137,7 @@ export default function ClientMap({
         priceBenchmark={priceBenchmark}
         nationalPriceBenchmark={nationalPriceBenchmark}
         focusLocation={distanceReferenceLocation}
+        isDesktop={isDesktopViewport}
       />
     </div>
   );
